@@ -22,29 +22,26 @@ if __name__ == "__main__":
     h5dd = h5parm(args.h5dde)
 
 
-    dirdict = {'Isl_patch_47': 'i57',
-               'Isl_patch_93': 'i34',
-               'Isl_patch_80': 'i37',
-               'Isl_patch_72': 'i61',
-               'Isl_patch_98': 'i79',
-               'Isl_patch_45': 'i36',
-               'Isl_patch_38': 'i42',
-               'Isl_patch_19': 'i45'}
+    dirdict = {'Isl_patch_64': 'i57',
+               'Isl_patch_110': 'i34',
+               'Isl_patch_100': 'i37',
+               'Isl_patch_36': 'i45',
+               'Isl_patch_61': 'i36',
+               'Isl_patch_91': 'i44'}
 
-    dirs =['Isl_patch_93',
-           'Isl_patch_80',
-           'Isl_patch_72',
-           'Isl_patch_98',
-           'Isl_patch_45',
-           'Isl_patch_38',
-           'Isl_patch_19']
+    dirs =['Isl_patch_64',
+           'Isl_patch_110',
+           'Isl_patch_100',
+           'Isl_patch_36',
+           'Isl_patch_61',
+           'Isl_patch_91']
 
 
     ant = ['RS205', 'RS208', 'RS210', 'RS305', 'RS306', 'RS307', 'RS310', 'RS406', 'RS407', 'RS409', 'RS503', 'RS508', 'RS509']
     antlba = ['RS205LBA', 'RS208LBA', 'RS210LBA', 'RS305LBA', 'RS306LBA', 'RS307LBA', 'RS310LBA', 'RS406LBA', 'RS407LBA', 'RS409LBA', 'RS503LBA', 'RS508LBA', 'RS509LBA']
     anthba = ['RS205HBA', 'RS208HBA', 'RS210HBA', 'RS305HBA', 'RS306HBA', 'RS307HBA', 'RS310HBA', 'RS406HBA', 'RS407HBA', 'RS409HBA', 'RS503HBA', 'RS508HBA', 'RS509HBA']
 
-    mode = 'HBA'
+    mode = 'LBA'
     if mode == 'LBA':
         refAnt = 'CS001LBA'
         antstat = antlba
@@ -69,16 +66,16 @@ if __name__ == "__main__":
     if mode in ['LBA', 'HBA']:
         tec_dde = np.swapaxes(tec_dde, 0,1)
         tec_dde = np.swapaxes(tec_dde, 1,2)
-    print(tec_dde.shape)
+
     tec_dde = interp1d(tabdde.getAxisValues('time'),tec_dde, axis=0,  bounds_error=False, fill_value='extrapolate')(t_true)
 
     dir_true = list(dir_true)
-    print(dir_dde)
     dir_map = [dir_true.index('['+dirdict[d]+']') for d in dir_dde]
-
-
-    print('dir ',np.std(tec_true[...,dir_map] - tec_self - tec_dde, axis=(0,1)))
+    print(tec_dde.shape, tec_self.shape, tec_true.shape)
+    # print('dir ',np.std(tec_true[...,dir_map] - tec_self - tec_dde, axis=(0,1)))
     print('ant ',np.std(tec_true[...,dir_map] - tec_self - tec_dde, axis=(0,2)))
+    # print(np.median(np.std(tec_true[...,dir_map] - tec_self - tec_dde, axis=0).flatten()))
+    # print(np.mean(np.std(tec_true[...,dir_map] - tec_self - tec_dde, axis=0).flatten()))
     rms = np.std(tec_true[...,dir_map] - tec_self - tec_dde)
     print(rms)
 

@@ -10,7 +10,7 @@ from shutil import copy2 as copy
 import numpy as np
 from astropy.coordinates import SkyCoord
 from astropy import units as u
-import lsmtool
+import lsmtool, pyregion
 import lib_fits
 
 from LiLF import lib_ms, lib_img, lib_dd, lib_util
@@ -19,11 +19,29 @@ with w.if_todo('cleaning'):
     pass
 
 
-input_pth = '/home/p1uy068/node31/lofar2.0/HBA/tgts/ddcal'
-output_pth = '/home/p1uy068/node31/lofar2.0/LBA/tgts'
+input_pth = '/home/p1uy068/node/lofar2.0/LBA/tgts_test/ddcal'
+output_pth = '/home/p1uy068/node/lofar2.0/HBA/tgts_test'
 removeExtendedCutoff = 0.0002
 
 s = lib_util.Scheduler(dry = False)
+parset = lib_util.getParset()
+parset_dir = parset.get('LOFAR_dd-serial','parset_dir')
+
+if not os.path.exists('mss-avg'):
+    MSs = lib_ms.AllMSs( glob.glob('mss/TC*[0-9].MS'), s )
+    timeint = MSs.getListObj()[0].getTimeInt()
+    avgtimeint = int(round(8/timeint))
+    nchan_init = MSs.getListObj()[0].getNchan()
+    # avg (x8) sol (x6) - we need a multiple of 8x6=48, the largest that is <nchan
+    # survey after avg (x8): 60, final number of sol 10
+    # pointed after avg (x8): 120, final number of sol 20
+    nchan = nchan_init - nchan_init%48
+    os.makedirs('mss-avg')
+    print('Averaging in time (%is -> %is), channels: %ich -> %ich)' % (timeint,timeint*avgtimeint,nchan_init,nchan))
+    MSs.run('DPPP '+parset_dir+'/DPPP-avg.parset msin=$pathMS msout=mss-avg/$nameMS.MS msin.datacolumn=CORRECTED_DATA msin.nchan='+str(nchan)+' \
+            avg.timestep='+str(avgtimeint)+' avg.freqstep=1',
+            log='$nameMS_initavg.log', commandType='DPPP')
+
 MSs = lib_ms.AllMSs(glob.glob('mss-avg/TC*[0-9].MS'), s, check_flags=False)
 detectability_dist = MSs.getListObj()[0].getFWHM(freq='max')*1.5/2.  # 1.8 to go to close to the null
 phase_center = MSs.getListObj()[0].getPhaseCentre()
@@ -104,6 +122,7 @@ for no,d in enumerate(directions):
     model_root = 'ddcal/c00/skymodels/%s-init' % (d.name)
     for model_file in glob.glob(full_image.root + '*[0-9]-model.fits'):
         os.system('cp %s %s' % (model_file, model_file.replace(full_image.root, model_root)))
+    # pyregion.open('ddca')
     d.set_model(model_root, typ='init', apply_region=True)
     # make fits mask
     print('make fits mask...')
@@ -134,8 +153,8 @@ for no,d in enumerate(directions):
     if size < 4 * img_beam[0] / 3600:
         size = 4 * img_beam[0] / 3600
     # for complex sources force a larger region
-    if len(dlsm) > 1 and size < 10 * img_beam[0] / 3600:
-        size = 10 * img_beam[0] / 3600
+    if len(dlsm) > 1 and size < 20 * img_beam[0] / 3600:
+        size = 20 * img_beam[0] / 3600
     print('DEBUG:',d.name,np.sum(fluxes),ref_freq.mean(),size,img_beam)
     ra, dec = np.array(dlsm.getPatchPositions(asArray=True)).flatten()
     d.set_position([ra, dec], distance_peeloff=detectability_dist, phase_center=phase_center)

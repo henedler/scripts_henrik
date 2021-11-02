@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser(description = "Create point-source subtracted i
 parser.add_argument("msfiles", nargs="*", help="Input ms files")
 parser.add_argument("region",  help='subtract region', type=str)
 parser.add_argument("-n","--name",  help='imagename prefix', default='subtract', type=str)
-parser.add_argument("-s","--size", help='size in deg, e.g. 1.1,2.1', default='0.17,0.17', type=str)
+parser.add_argument("-s","--size",  help='size in deg, e.g. 1.1,2.1', default='0.17,0.17', type=str)
 parser.add_argument("-k","--kernelsize", help='kernel size in arcsec', default=20, type=float)
 args = parser.parse_args()
 
@@ -68,8 +68,8 @@ with w.if_todo('image_hres'):
                          no_update_model_required='',
                          minuv_l=100,
                          mgain=0.85,
-                         multiscale='',
-                         multiscale_scales='0,10,20',
+                         # multiscale='',  # do not use multiscale to get no emission outside of regon
+                         # multiscale_scales='0,7,14', #20
                          baseline_averaging='',
                          auto_threshold=0.3,
                          auto_mask=1.5,

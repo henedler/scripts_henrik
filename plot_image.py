@@ -1,116 +1,90 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import sys, os
 import numpy as np
 import argparse
 import logging
-from lib_fits import flatten
+from lib_fits import flatten, Image
 
 import matplotlib
-matplotlib.use('Agg') # aplpy api suggestion
+# matplotlib.use('Agg') # aplpy api suggestion
 import matplotlib.pyplot as plt
-from matplotlib.colors import SymLogNorm
-
+import matplotlib.hatch
 from astropy.wcs import WCS
-from astropy.io import fits
-from astropy.visualization import (LogStretch, SqrtStretch, PercentileInterval,
+from astropy.visualization import (SqrtStretch, PercentileInterval,
                                    LinearStretch, LogStretch,
                                    ImageNormalize, AsymmetricPercentileInterval)
-from astropy import units as u
-
+from lib_plot import addRegion, addCbar, addBeam, addScalebar, setSize, ArrowHatch
 logging.root.setLevel(logging.INFO)
 
-def add_scalebar(ax, wcs, z, kpc, color='black'):
-    from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
-    from astropy.cosmology import FlatLambdaCDM
-    cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
-    print("-- Redshift: %f" % z)
-    degperpixel = np.abs(wcs.all_pix2world(0,0,0)[1] - wcs.all_pix2world(0,1,0)[1]) # delta deg for 1 pixel
-    degperkpc = cosmo.arcsec_per_kpc_proper(z).value/3600.
-    pixelperkpc = degperkpc/degperpixel
-    scalebar = AnchoredSizeBar(ax.transData, kpc*pixelperkpc, '%i kpc' % kpc, 'lower right', pad=0.5, color=color, frameon=False, sep=5, label_top=True, size_vertical=2)
-    ax.add_artist(scalebar)
-
-def setSize(wcs, ra, dec, size_ra, size_dec):
-    """
-    Properly set bottom left and top right pixel assuming a center and a size in deg
-    """
-    # bottom
-    dec_b = dec - size_dec/2.
-    # top
-    dec_t = dec + size_dec/2.
-    # bottom left
-    ra_l = ra-size_ra/np.cos(dec_b*np.pi/180)/2.
-    # top right
-    ra_r = ra+size_ra/np.cos(dec_t*np.pi/180)/2.
-
-    x,y = wcs.wcs_world2pix([ra_l,ra_r]*u.deg, [dec_b,dec_t]*u.deg, 1, ra_dec_order=True)
-    ax.set_xlim(x[1], x[0])
-    ax.set_ylim(y[0], y[1])
-    return x.astype(int), y.astype(int)
-
-def addBeam(ax, hdr, edgecolor='black'):
-    """
-    hdr: fits header of the file
-    """
-    from radio_beam import Beam
-
-    bmaj = hdr['BMAJ']
-    bmin = hdr['BMIN']
-    bpa = hdr['BPA']
-    beam = Beam(bmaj*u.deg,bmin*u.deg,bpa*u.deg)
-
-    assert np.abs(hdr['CDELT1']) == np.abs(hdr['CDELT2'])
-    pixscale = np.abs(hdr['CDELT1'])
-    posx = ax.get_xlim()[0]+bmaj/pixscale
-    posy = ax.get_ylim()[0]+bmaj/pixscale
-    r = beam.ellipse_to_plot(posx, posy, pixscale *u.deg)
-    r.set_edgecolor(edgecolor)
-    r.set_facecolor('white')
-    ax.add_patch(r)
-
-def addRegion(regionfile, ax):
-    import pyregion
-    reg = pyregion.open(regionfile)
-    reg = reg.as_imagecoord(header)
-    patch_list, artist_list = reg.get_mpl_patches_texts()
-    for p in patch_list:
-        ax.add_patch(p)
-    for a in artist_list:
-        ax.add_artist(a)
 
 parser = argparse.ArgumentParser(description='Basic plotting script for fits images')
-parser.add_argument('image', help='fits image to plot.')
+parser.add_argument('image', nargs='+', help='fits image to plot.')
 parser.add_argument('--region', nargs='+', help='ds9 region files to plot (optional).')
-parser.add_argument('--si', help='Make SI plot?', action='store_true')
+parser.add_argument('--type', default='stokes', help='stokes / si / sierr / si+err / curvature ')
+parser.add_argument('-c', '--center', nargs=2, type=float, default=[157.945, 35.049], help='Center ra/dec in deg')
+parser.add_argument('-s', '--size', nargs=2, type=float, default=[7.8, 7.8], help='size in arcmin')
+parser.add_argument('-z', '--redshift', type=float, default=None, help='redshift.')
+parser.add_argument('-n', '--noise', type=float, default=None, help='Hardcode noise level in mJy/beam.')
+parser.add_argument('-o', '--outfile', default=None, help='prefix of output image')
+parser.add_argument('--interval', default=None, nargs=2, help='Provide min/max interval.')
+parser.add_argument('--no_cbar', default=False, action='store_true', help='Show no cbar.')
+parser.add_argument('--no_sbar', default=False, action='store_true', help='Show no scalebar.')
+parser.add_argument('--sbar_kpc', default=100, type=float, help='Show how many kpc of scalebar?.')
+parser.add_argument('--show_grid', action='store_true', help='Show grid.')
+parser.add_argument('--no_axes', default=False, action='store_true', help='Show no axes.')
+parser.add_argument('--show_contours', action='store_true', help='Show contours.')
 
 args = parser.parse_args()
 if args.image == None:
     logging.error('No input image found.')
     sys.exit()
 
-filename = args.image
+filename = args.image[0]
 regions = args.region
+plottype = args.type
+if args.outfile:
+    outfile = args.outfile+'.pdf'
+else:
+    outfile = args.image[0].replace('fits','pdf')
+
 
 # Plot extensions
-center = [157.945, 35.049] # deg
-size = [0.14, 0.14] # deg
+## A1033
+# center = [157.945, 35.049] # deg
+# s = [0.13, 0.13]*60 # deg
+# z = 0.1259
+center = args.center
+size = args.size
 
+# stretch type (only stokes) 'log' (for extended) or 'sqrt' (for compact)
+stretch_type = 'sqrt'
 # Style
-is_spidx = args.si
 fontsize = 16
-
 # Scalebar
-plot_scalebar = True
-z = 0.1259 # redshift
-kpc = 150 # how many kpc is the scalebar?
-# Colorbar
-show_cbar = True
+show_scalebar = not args.no_sbar
+if show_scalebar:
+    z = args.redshift
+kpc = args.sbar_kpc # how many kpc is the scalebar?
+show_cbar = not args.no_cbar
+show_grid = args.show_grid
+show_axes = not args.no_axes
+show_contours = args.show_contours
+contout_base_sigma = 3 # will be this times [1,2,4,8,16]
+n_contour = 9
+
 
 logging.info('Setting up...')
 header, data = flatten(filename)
-if not is_spidx:
+img = Image(filename)
+if plottype in ['stokes']:
     data *= 1e3 # to mJy
+    if args.noise:
+        sigma = args.noise
+    else:
+        sigma = img.calc_noise(betaSigma=True) * 1e3
+    logging.info(f'Noise is {sigma:.2e} mJy/beam')
+
 wcs = WCS(header)
 
 fig = plt.figure(figsize=(10,10))
@@ -120,59 +94,114 @@ lat = ax.coords['dec']
 
 
 # zoom in in pixel
-xrange, yrange = setSize(wcs, center[0], center[1], *size)
-print(xrange, yrange)
+print(center, size)
+xrange, yrange = setSize(ax, wcs, center[0], center[1], *np.array(size)/60)
 logging.info('Plotting  {}-{}, {}-{} from {}x{}.'.format(xrange[1], xrange[0], yrange[0], yrange[1], len(data[0]), len(data[:,0])))
 data_visible = data[xrange[1]:xrange[0],yrange[0]:yrange[1]] # select only data that is visible in plot
 
+# if we want to scale SI map transparency with error
+if plottype == 'si+err':
+    _, data_alpha = flatten(args.image[1])
+
 # normalizer
-if is_spidx:
+if plottype == 'stokes':
+    interval = AsymmetricPercentileInterval(80, 99.995)#99.99)  # 80 - 99.99 percentile
+    if stretch_type == 'sqrt':
+        stretch = SqrtStretch()
+    elif stretch_type == 'log':
+        stretch = LogStretch()
+    else:
+        print('Stretch type unknown.')
+        sys.exit(0)
+    if args.interval:
+        int_min, int_max = args.interval
+        int_min = 1 * sigma
+    else:
+        int_min, int_max = interval.get_limits(data_visible)
+elif plottype == 'curvature':
     interval = PercentileInterval(99)
     stretch = LinearStretch()
-    int_min, int_max = interval.get_limits(data_visible)
+    rang = np.max(interval.get_limits(data_visible))
+    int_min, int_max = -rang, rang
 else:
-    interval = AsymmetricPercentileInterval(90,99.99) # 80 - 99.99 percentile
-    stretch = SqrtStretch()
-    int_min, int_max= interval.get_limits(data_visible)
-    int_min = -0.5 * np.nanstd(data_visible[np.abs(data_visible) < 5 * np.nanstd(data_visible)])  # possibly use 1 sigma for min
+    interval = PercentileInterval(99)
+    stretch = LinearStretch()
+    if args.interval:
+        int_min, int_max = args.interval
+    else:
+        int_min, int_max = interval.get_limits(data_visible)
 
 logging.info('min: {},  max: {}'.format(int_min,int_max))
-norm = ImageNormalize(data, vmin=int_min, vmax=int_max, stretch=stretch)
+norm = ImageNormalize(data, vmin=float(int_min), vmax=float(int_max), stretch=stretch)
 
 # bkgr image
 logging.info("Image...")
-if is_spidx:
-    im = ax.imshow(data, origin='lower',  interpolation='nearest', cmap='jet', norm=norm)
+if plottype in ['si','si+err']:
+    from colormaps import *
+    ul_mask = np.ones_like(data, dtype=int)
+    ll_mask = np.ones_like(data, dtype=int)
+    all_limit_mask = np.ones_like(data, dtype=int)
+    for k in header.keys(): # find upper limits from header...
+        if k[0:2] == 'UL':
+            i, j = np.array(header[k].replace(' ', '').split(',')).astype(int)
+            ul_mask[i,j] = 0
+            all_limit_mask[i,j] = 0
+        elif k[0:2] == 'LL':
+            i, j = np.array(header[k].replace(' ', '').split(',')).astype(int)
+            ll_mask[i, j] = 0
+            all_limit_mask[i, j] = 0
+    ul_mask[np.isnan(data)] = -1
+    ll_mask[np.isnan(data)] = -1
+    all_limit_mask[np.isnan(data)] = -1
+    if plottype == 'si':
+        im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='turbo', norm=norm)
+    elif plottype == 'si+err':
+        low_cut = np.percentile(data_alpha[~np.isnan(data_alpha)], 15)
+        print(low_cut)
+        data_alpha[data_alpha < low_cut] = low_cut
+        alpha = 0.7 * (np.nanmin(data_alpha)/data_alpha)**2 + 0.3
+        alpha[np.isnan(alpha)] = 0.3
+        im = ax.imshow(data, alpha=alpha, origin='lower', interpolation='nearest', cmap='turbo', norm=norm)
+    ax.contour(all_limit_mask, levels=[0.5], linewidths=0.5, colors=('black',), antialiased=True)
+    # ax.contourf(all_limit_mask, alpha=0.5, color='white', colors=('white',), levels=[-0.5,0.5], antialiased=True) # this was used to shade UL and LL
+    if np.any(ul_mask == 0): # only if we have any upper limits
+        matplotlib.hatch._hatch_types.append(ArrowHatch)
+        ax.contourf(ul_mask, alpha=0.0, levels=[-0.5,0.5], hatches=['arr{270}{7}{2}',''], antialiased=True)
+    if np.any(ll_mask == 0): # only if we have any upper limits
+        matplotlib.hatch._hatch_types.append(ArrowHatch)
+        ax.contourf(ll_mask, alpha=0.0, levels=[-0.5,0.5], hatches=['arr{90}{7}{2}',''], antialiased=True)
+elif plottype == 'sierr':
+    im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='RdPu', norm=norm)
+elif plottype == 'curvature':
+    im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='coolwarm', norm=norm)
 else:
+    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='Oranges', norm=norm)
     im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='cubehelix', norm=norm)
 
 # contours
-# print("Contour...")
-header_c, data_c = flatten(filename)
-# ax.contour(data_c, transform=ax.get_transform(WCS(header_c)), levels=np.logspace(-2, 0., 5), colors='red', alpha=0.5)
+if show_contours:
+    print("Contour...")
+    contour_limits = contout_base_sigma * 2**np.arange(n_contour) * sigma
+    print(contour_limits)
+    ax.contour(data, transform=ax.get_transform(WCS(header)), levels=contour_limits, colors='grey', alpha=0.7)
+    ax.contour(data, transform=ax.get_transform(WCS(header)), levels=-contour_limits[::-1], colors='grey', alpha=0.7, linestyles='dashed')
 
 # add beam
-accentcolor = 'black' if is_spidx else 'white'
-addBeam(ax, header_c, edgecolor=accentcolor)
+accentcolor = 'white' if args.type == 'stokes' else 'black'
+addBeam(ax, header, edgecolor=accentcolor)
 
 logging.info("Refinements...")
 # grid - BUG with ndim images?
-ax.coords.grid(color=accentcolor, ls='dotted', alpha=0.2)
+if show_grid:
+    ax.coords.grid(color=accentcolor, ls='dotted', alpha=0.2)
 
 # colorbar
 if show_cbar:
-    cbaxes = fig.add_axes([0.127, 0.89, 0.772, 0.02])
-    fig.colorbar(im, cax=cbaxes, orientation='horizontal')
-    cbaxes.xaxis.tick_top()
-    if is_spidx:
-        cbaxes.xaxis.set_label_text('Spectral Index',fontsize=fontsize)
-    else:
-        cbaxes.xaxis.set_label_text(r'Flux density (mJy beam$^{-1}$)', fontsize=fontsize)
-    cbaxes.xaxis.set_label_position('top')
+    addCbar(fig, plottype, im, header, int_max, fontsize=fontsize+1)
 
 # scalebar
-if plot_scalebar:
-    add_scalebar(ax, wcs, z, kpc, color='white')
+if show_scalebar:
+    addScalebar(ax, wcs, z, kpc, fontsize, color=accentcolor)
 
 # regions
 if regions is not None:
@@ -180,7 +209,7 @@ if regions is not None:
         regions = [regions]
     for region in regions:
         logging.info('Adding region: '+ str(region))
-        addRegion(region, ax)
+        addRegion(region, ax, header)
 
 # # markers
 # from matplotlib.patches import Rectangle, Circle # note this is stretched as ra is squeezed in angles
@@ -195,18 +224,33 @@ if regions is not None:
 # ax.scatter([90.8345611,90.8275587], [42.1889537,42.2431142], edgecolor='red', facecolor=(1, 0, 0, 0.5), transform=ax.get_transform('world'))
 
 # labels
-lon.set_axislabel('Right Ascension (J2000)', fontsize=fontsize)
-lat.set_axislabel('Declination (J2000)', fontsize=fontsize)
-lon.set_ticklabel(size=fontsize)
-lat.set_ticklabel(size=fontsize)
+if show_axes:
+    lon.set_axislabel('Right Ascension (J2000)', fontsize=fontsize)
+    lat.set_axislabel('Declination (J2000)', fontsize=fontsize)
+    lon.set_ticklabel(size=fontsize)
+    lat.set_ticklabel(size=fontsize)
 
-# small img
-lon.set_major_formatter('hh:mm:ss')
-lat.set_major_formatter('dd:mm')
-lat.set_ticklabel(rotation=90) # to turn dec vertical
+    # small img
+    lon.set_major_formatter('hh:mm:ss')
+    lat.set_major_formatter('dd:mm')
+    lat.set_ticklabel(rotation=90) # to turn dec vertical
+else:
+    ax.axis('off')
 
-logging.info("Saving..."+filename.replace('fits','pdf'))
-fig.savefig(filename.replace('fits','pdf'), bbox_inches='tight')
+try:
+    if np.any(all_limit_mask == 0):  # only if we have any upper limits
+        import matplotlib.patches as mpatches
+        handles = []
+        if np.any(ul_mask == 0):  # only if we have any upper limits
+            handles.append(mpatches.Patch( facecolor='k', hatch=r'arr{270}{9}{2}', label='Upper limits', fill=False))
+        if np.any(ll_mask == 0):  # only if we have any upper limits
+            handles.append(mpatches.Patch( facecolor='k', hatch=r'arr{90}{9}{2}', label='Lower limits', fill=False))
+        legend = ax.legend(handles = handles, loc=2, fontsize=fontsize, handleheight=1.5)
+except NameError:
+    pass
+
+logging.info("Saving..."+outfile)
+fig.savefig(outfile, bbox_inches='tight')
 
 # small image
 #os.system('pdf_reducer.sh toothLBA.pdf')
