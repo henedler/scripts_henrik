@@ -7,10 +7,11 @@ import logging
 from lib_fits import flatten, Image
 
 import matplotlib
-# matplotlib.use('Agg') # aplpy api suggestion
+matplotlib.use('Agg') # aplpy api suggestion
 import matplotlib.pyplot as plt
 import matplotlib.hatch
 from astropy.wcs import WCS
+from astropy.table import Table
 from astropy.visualization import (SqrtStretch, PercentileInterval,
                                    LinearStretch, LogStretch,
                                    ImageNormalize, AsymmetricPercentileInterval)
@@ -21,18 +22,22 @@ logging.root.setLevel(logging.INFO)
 parser = argparse.ArgumentParser(description='Basic plotting script for fits images')
 parser.add_argument('image', nargs='+', help='fits image to plot.')
 parser.add_argument('--region', nargs='+', help='ds9 region files to plot (optional).')
-parser.add_argument('--type', default='stokes', help='stokes / si / sierr / si+err / curvature ')
+parser.add_argument('--type', default='stokes', help='stokes / si / sierr / si+err / curvature / curverr ')
 parser.add_argument('-c', '--center', nargs=2, type=float, default=[157.945, 35.049], help='Center ra/dec in deg')
 parser.add_argument('-s', '--size', nargs=2, type=float, default=[7.8, 7.8], help='size in arcmin')
 parser.add_argument('-z', '--redshift', type=float, default=None, help='redshift.')
 parser.add_argument('-n', '--noise', type=float, default=None, help='Hardcode noise level in mJy/beam.')
 parser.add_argument('-o', '--outfile', default=None, help='prefix of output image')
-parser.add_argument('--interval', default=None, nargs=2, help='Provide min/max interval.')
+parser.add_argument('--interval', default=None, nargs=2, type=float, help='Provide min/max interval.')
 parser.add_argument('--no_cbar', default=False, action='store_true', help='Show no cbar.')
 parser.add_argument('--no_sbar', default=False, action='store_true', help='Show no scalebar.')
 parser.add_argument('--sbar_kpc', default=100, type=float, help='Show how many kpc of scalebar?.')
+parser.add_argument('--stretch', default='sqrt', type=str, help='Use sqrt for normal, log for very extended.')
 parser.add_argument('--show_grid', action='store_true', help='Show grid.')
 parser.add_argument('--no_axes', default=False, action='store_true', help='Show no axes.')
+parser.add_argument('--png', default=False, action='store_true', help='Save as .png (default: pdf).')
+parser.add_argument('--transparent', default=False, action='store_true', help='Transparent background (png).')
+parser.add_argument('--evcc_cz', default=None, type=str, help='Plot EVCC catalogue cz.')
 parser.add_argument('--show_contours', action='store_true', help='Show contours.')
 
 args = parser.parse_args()
@@ -50,15 +55,11 @@ else:
 
 
 # Plot extensions
-## A1033
-# center = [157.945, 35.049] # deg
-# s = [0.13, 0.13]*60 # deg
-# z = 0.1259
 center = args.center
 size = args.size
 
 # stretch type (only stokes) 'log' (for extended) or 'sqrt' (for compact)
-stretch_type = 'sqrt'
+stretch_type = args.stretch
 # Style
 fontsize = 16
 # Scalebar
@@ -98,14 +99,16 @@ print(center, size)
 xrange, yrange = setSize(ax, wcs, center[0], center[1], *np.array(size)/60)
 logging.info('Plotting  {}-{}, {}-{} from {}x{}.'.format(xrange[1], xrange[0], yrange[0], yrange[1], len(data[0]), len(data[:,0])))
 data_visible = data[xrange[1]:xrange[0],yrange[0]:yrange[1]] # select only data that is visible in plot
-
+if data_visible.ndim < 2:
+    raise ValueError('Selected coordinates out of image.')
 # if we want to scale SI map transparency with error
 if plottype == 'si+err':
     _, data_alpha = flatten(args.image[1])
 
 # normalizer
 if plottype == 'stokes':
-    interval = AsymmetricPercentileInterval(80, 99.995)#99.99)  # 80 - 99.99 percentile
+    interval = AsymmetricPercentileInterval(65, 99.8)#99.99)  # 80 - 99.99 percentile
+    # interval = AsymmetricPercentileInterval(80, 99.995)#99.99)  # 80 - 99.99 percentile
     if stretch_type == 'sqrt':
         stretch = SqrtStretch()
     elif stretch_type == 'log':
@@ -115,7 +118,7 @@ if plottype == 'stokes':
         sys.exit(0)
     if args.interval:
         int_min, int_max = args.interval
-        int_min = 1 * sigma
+        # int_min = 1 * sigma
     else:
         int_min, int_max = interval.get_limits(data_visible)
 elif plottype == 'curvature':
@@ -174,9 +177,12 @@ elif plottype == 'sierr':
     im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='RdPu', norm=norm)
 elif plottype == 'curvature':
     im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='coolwarm', norm=norm)
+    ax.contour(np.isnan(data), levels=[0.5], linewidths=0.5, colors=('black',), antialiased=True)
+elif plottype == 'curverr':
+    im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='RdPu', norm=norm)
 else:
     # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='Oranges', norm=norm)
-    im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='cubehelix', norm=norm)
+    im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='cubehelix', norm=norm) # 'cubehelix',
 
 # contours
 if show_contours:
@@ -185,6 +191,14 @@ if show_contours:
     print(contour_limits)
     ax.contour(data, transform=ax.get_transform(WCS(header)), levels=contour_limits, colors='grey', alpha=0.7)
     ax.contour(data, transform=ax.get_transform(WCS(header)), levels=-contour_limits[::-1], colors='grey', alpha=0.7, linestyles='dashed')
+
+# EVCC catalogue
+if args.evcc_cz:
+    print("Catalogue...")
+    evcc = Table.read(args.evcc_cz)
+    sct = ax.scatter(evcc['RAJ2000'], evcc['DEJ2000'], c=evcc['cz'], marker='o', cmap='Spectral_r', transform=ax.get_transform('world'))
+    sct.set_facecolor('none')
+    plt.colorbar(sct, label='heliocentric radial velocity [km/s]')
 
 # add beam
 accentcolor = 'white' if args.type == 'stokes' else 'black'
@@ -197,7 +211,7 @@ if show_grid:
 
 # colorbar
 if show_cbar:
-    addCbar(fig, plottype, im, header, int_max, fontsize=fontsize+1)
+    addCbar(fig, plottype, im, header, float(int_max), fontsize=fontsize+1)
 
 # scalebar
 if show_scalebar:
@@ -249,8 +263,7 @@ try:
 except NameError:
     pass
 
+if args.transparent or args.png:
+    outfile = outfile.replace('pdf', 'png')
 logging.info("Saving..."+outfile)
-fig.savefig(outfile, bbox_inches='tight')
-
-# small image
-#os.system('pdf_reducer.sh toothLBA.pdf')
+fig.savefig(outfile, bbox_inches='tight', transparent=args.transparent)

@@ -6,8 +6,6 @@ import matplotlib.hatch
 from matplotlib.patches import Polygon
 from matplotlib.colorbar import ColorbarBase
 from astropy import units as u
-import matplotlib.image as mpimg
-import PIL
 
 
 
@@ -114,38 +112,19 @@ def addCbar(fig, plottype, im, header, int_max, fontsize, cbanchor=[0.127, 0.89,
     # cbar = fig.colorbar(im, cax=cbaxes, orientation='horizontal', pad=0.35, alpha=1.0)
     if plottype == 'stokes':
         cbaxes.xaxis.set_label_text(r'Flux density (mJy beam$^{-1}$)', fontsize=fontsize)
-        log_start, log_stop = -2, np.floor(np.log10(int_max)).astype(int)
-        cbar.set_ticks([0.001,0.005,0.01,0.05,0.1,0.5,1.,5.,10.])
+        # log_start, log_stop = -2, np.floor(np.log10(int_max)).astype(int)
+        # cbar.set_ticks([0.001,0.005,0.01,0.05,0.1,0.5,1.,5.,10.])
         # cbar.set_ticks(10**(np.linspace(log_start, log_stop+1, log_stop - log_start +2 )))  # horizontal colorbar
     elif plottype in ['si', 'si+err']:
         cbaxes.xaxis.set_label_text(r'$\alpha_{'+f'{(header["FREQLO"]*1e-6):.0f}'+'MHz}^{'f'{(header["FREQHI"]*1e-6):.0f}'+'MHz}$', fontsize=fontsize)
     elif plottype == 'sierr':
         cbaxes.xaxis.set_label_text(r'$\Delta\alpha_{'+f'{(header["FREQLO"]*1e-6):.0f}'+'MHz}^{'f'{(header["FREQHI"]*1e-6):.0f}'+'MHz}$', fontsize=fontsize)
-    else:
+    elif plottype == 'curvature':
         cbaxes.xaxis.set_label_text('Curvature', fontsize=fontsize)
+    elif plottype == 'curverr':
+        cbaxes.xaxis.set_label_text('Curvature error', fontsize=fontsize)
+    else:
+        raise ValueError(f'plottype {plottype} unknown.')
     cbaxes.xaxis.tick_top()
     cbaxes.xaxis.set_label_position('top')
     cbar.ax.tick_params(labelsize=fontsize-3)
-
-def get_sdss_cutout(ra, dec, size=[6, 6], scale=0.5):
-    """
-    Get an SDSS cutout
-    Parameters
-    ----------
-    ra: RA in deg
-    dec: DEC in deg
-    size: [int, int], size in arcmin. default = 6
-    scale: scale, arcsec per pixel. default = 0.5
-
-    Returns
-    -------
-
-    """
-    outfile = 'test'
-    print(f"wget 'http://skyserver.sdss.org/dr14/SkyServerWS/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&height={size[0]}&width={size[1]}&opt=' -O {outfile}.jpeg")
-    os.system(f"wget 'http://skyserver.sdss.org/dr14/SkyServerWS/ImgCutout/getjpeg?ra={ra}&dec={dec}&scale={scale}&height={size[0]*60}&width={size[1]*60}&opt=' -O {outfile}.jpeg")
-    # jpeg_image = PIL.Image.open(f"{outfile}.jpeg")
-    # data = np.array(jpeg_image.getdata())
-    data = mpimg.imread(f"{outfile}.jpeg")
-    print(data)
-    return data

@@ -19,9 +19,10 @@ from reproject import reproject_exact
 from astropy.visualization import (SqrtStretch, PercentileInterval,
                                    LinearStretch, LogStretch,
                                    ImageNormalize, AsymmetricPercentileInterval)
-from lib_plot import addRegion, addCbar, addBeam, addScalebar
+from lib_plot import addRegion, addCbar, addBeam, addScalebar, setSize
 from lib_fits import flatten
 
+# TODO use frits Legacy survey script
 
 def get_overlay_image(coord: SkyCoord, size, wcs: WCS, window='optical') -> [np.array]:
     """
@@ -69,15 +70,18 @@ def get_overlay_image(coord: SkyCoord, size, wcs: WCS, window='optical') -> [np.
 
 parser = argparse.ArgumentParser(description='Plotting script to overlay fits contours on SDSS image')
 parser.add_argument('image', help='fits image to plot.')
-parser.add_argument('target', help='Name of target (Messier, NGC, VCC, IC...)')
+parser.add_argument('target', help='Name of target (Messier, NGC, VCC, IC...). Can also be multiple targets provided like M60+NGC4647.')
 parser.add_argument('--titlename', help='Title name of target')
 parser.add_argument('-s', '--size', type=float, default=8., help='size in arcmin')
 parser.add_argument('-z', '--redshift', type=float, default=0.0043, help='redshift.')
 parser.add_argument('-n', '--noise', type=float, default=0.2, help='Hardcode noise level in mJy/beam.')
 parser.add_argument('-u', '--upsample', type=int, default=2, help='Upsample the image by this factor.')
+parser.add_argument('--no_axes', default=False, action='store_true', help='Show no axes.')
 parser.add_argument('--noisemap', type=str, help='Noise map in mJy/beam.')
 parser.add_argument('--skip', action='store_true', help='Skip existing plots?')
-parser.add_argument('--window', type=str, help='optical (default) / IR / UV ')
+parser.add_argument('--arrow', action='store_true',help='If set to true, point arrow to m87 (e.g. cluster center)')
+parser.add_argument('--window', type=str, default='optical', help='optical (default) / IR / UV ')
+parser.add_argument('--transparent', default=False, action='store_true', help='Transparent background (png).')
 parser.add_argument('-o', '--outfile', default=None, help='prefix of output image')
 
 args = parser.parse_args()
@@ -86,7 +90,7 @@ if args.image == None:
     sys.exit()
 
 # Usage:
-fontsize = 12
+fontsize = 16
 name = args.target  # NGC ... and M.. names definitely work
 titlename = args.titlename if args.titlename else args.target
 if os.path.exists(titlename + '.png') and args.skip:
@@ -97,7 +101,14 @@ size = args.size * u.arcmin  # Size of the image in arcmin (so 10'x10')
 header, data = flatten(args.image)
 data = data * 1000
 in_wcs = WCS(header)
-coord = SkyCoord.from_name(name)
+if '+' in name:
+    names = name.split('+')
+    coords = [SkyCoord.from_name(n) for n in names]
+    mean_ra = np.mean([coord.ra.to_value('deg') for coord in coords])
+    mean_dec = np.mean([coord.dec.to_value('deg') for coord in coords])
+    coord = SkyCoord(ra=mean_ra*u.degree, dec = mean_dec*u.degree)
+else:
+    coord = SkyCoord.from_name(name)
 # Cutout central region
 cutout = Cutout2D(data, coord, size=size, wcs=in_wcs)
 noise = args.noise
@@ -106,7 +117,10 @@ if args.noisemap:
     # Load FITS file
     wcs_n, data_n = flatten(args.noisemap)
     data_n = data_n * 1000
-    cutout_n = Cutout2D(data_n, coord, size=size, wcs=wcs_n)
+    try:
+        cutout_n = Cutout2D(data_n, coord, size=size, wcs=wcs_n)
+    except AttributeError:
+        cutout_n = Cutout2D(data_n, coord, size=size, wcs=in_wcs)
     noise = np.nanstd(cutout_n.data)
     print(f"Found background rms: {noise:.3f}mJy/beam.")
 
@@ -123,7 +137,7 @@ uhdr['NAXIS1'] = np.array(np.shape(cutout.data)[0], dtype=int)*factor
 uhdr['NAXIS2'] = np.array(np.shape(cutout.data)[1], dtype=int)*factor
 sample_data, __footprint = reproject_exact((cutout.data, cutout.wcs), uhdr, parallel=False)
 # smooth sample data...
-# sample_data = scipy.ndimage.filters.gaussian_filter(sample_data, factor/3)
+sample_data = scipy.ndimage.filters.gaussian_filter(sample_data, factor/3)
 
 # get background image from hips
 uwcs = WCS(uhdr)
@@ -138,21 +152,37 @@ ax.imshow(image, origin="lower", cmap="gray", interpolation='kaiser')
 contour_limits = 3 * 2 ** np.arange(20) * noise
 vmin, vmax = contour_limits[0], np.nanmax(sample_data)
 norm = ImageNormalize(sample_data, vmin=vmin, vmax=vmax, stretch=SqrtStretch())
-ax.contour(sample_data, levels=contour_limits, cmap='Reds', norm=norm, alpha=1, linewidths=1)
-ax.contour(sample_data, levels=-contour_limits[::-1], cmap='Reds', alpha=1, linewidths=1, linestyles='dashed', norm=norm)
+ax.contour(sample_data, levels=contour_limits, cmap='cool', norm=norm, alpha=1, linewidths=1)
+ax.contour(sample_data, levels=-contour_limits[::-1], cmap='cool', alpha=1, linewidths=1, linestyles='dashed', norm=norm)
+
+# plot a nice arrow pointing towards the cluster center
+if args.arrow:
+    coord_m87 = SkyCoord.from_name('M87')
+    pix_coord_center = uwcs.wcs_world2pix([[coord.ra.value, coord.dec.value]],1)[0]
+    pix_coord_m87 = uwcs.wcs_world2pix([[coord_m87.ra.value, coord_m87.dec.value]],1)[0]
+    delta_pix = pix_coord_m87 - pix_coord_center
+    delta_pix /= np.linalg.norm(delta_pix)
+    scale = np.min(np.shape(sample_data)*factor)
+    arr_origin = pix_coord_center + 0.3*scale*delta_pix
+    ax.arrow(*arr_origin, *(0.07*scale*delta_pix),  color='#f64fff', width=2.5)
 
 addScalebar(ax, uwcs, args.redshift, 10, fontsize, color='white')
 addBeam(ax, header, edgecolor='white')
 
-lon.set_axislabel('Right Ascension (J2000)', fontsize=fontsize)
-lat.set_axislabel('Declination (J2000)', fontsize=fontsize)
-lon.set_ticklabel(size=fontsize)
-lat.set_ticklabel(size=fontsize)
+# labels
+if not args.no_axes:
+    lon.set_axislabel('Right Ascension (J2000)', fontsize=fontsize)
+    lat.set_axislabel('Declination (J2000)', fontsize=fontsize)
+    lon.set_ticklabel(size=fontsize)
+    lat.set_ticklabel(size=fontsize)
 
-# small img
-lon.set_major_formatter('hh:mm:ss')
-lat.set_major_formatter('dd:mm')
-lat.set_ticklabel(rotation=90)  # to turn dec vertical
+    # small img
+    lon.set_major_formatter('hh:mm:ss')
+    lat.set_major_formatter('dd:mm')
+    lat.set_ticklabel(rotation=90) # to turn dec vertical
+else:
+    ax.axis('off')
 
-plt.title(f"{titlename}, "+r"$\sigma_{rms}=$"+f"{noise:.3f}mJy/beam", size=fontsize+2)
-plt.savefig(titlename + '.png', bbox_inches='tight')
+# plt.title(f"{titlename}, "+r"$\sigma_{rms}=$"+f"{noise:.3f}mJy/beam", size=fontsize+2)
+plt.title(f"{titlename}", size=fontsize+2)
+plt.savefig(titlename + '.png', bbox_inches='tight', transparent=args.transparent)
