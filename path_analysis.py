@@ -248,7 +248,7 @@ if __name__ == '__main__':
     parser.add_argument('--injection-offset', default = 0.0, type=float, help='Offset of injection point from beginning of path in kpc.')
     parser.add_argument('--max-fit-length', default = np.inf, type=float,  help='Distance from the first region until which data points should be taken into account for the fitting in kpc.')
     parser.add_argument('--fluxerr', default = 0.0, type=float, help='Flux scale error of all images. Provide a fraction, e.g. 0.1 for a 10%% error. If set to a value greater zero, the flux scale uncertainty will be included in the fit as systematic offset! Make sure this is what you want to do.')
-    parser.add_argument('-o', '--out', default='trace_path', type=str, help='Name of the output image and csv file.')
+    parser.add_argument('-o', '--out', default='path_analysis', type=str, help='Name of the output image and csv file.')
     parser.add_argument('--align', action='store_true', help='Align the images.')
     parser.add_argument('--reuse-shift', action='store_true', help='Resue catalogue shifted images if available.')
     parser.add_argument('--reuse-regrid', action='store_true', help='Resue regrid images if availalbe.')
@@ -330,7 +330,7 @@ if __name__ == '__main__':
     # do the fitting
     S = lib_aging.S_model(epsrel=1.5e-2)
     B_min = 3.25e-10 * (1+args.z)**2 * 3**-0.5 # This is B_eq (syn_loss == IC loss) / sqrt(3)
-    log.info(f"Using minimum loss magnetic field B={B_min}")
+    log.info(f"Using minimum loss magnetic field B={B_min:.4f}T")
 
     kmpers_to_kpc_per_Myr = float((u.Myr / u.s * u.km / u.kpc).decompose().to_string())
     l_sel = (0 <= df['l']) & (df['l'] - args.injection_offset <= args.max_fit_length)  # length selection
@@ -407,26 +407,17 @@ if __name__ == '__main__':
         return res
 
     S_model = lmfit.Model(fit_N0)
-
     if args.reuse_fit and os.path.exists(f'{args.out}-fit.pickle') and os.path.exists(f'{args.out}-fit-norms.pickle'):
         # reuse fit results for SI-fit and for normalization fit
         log.info('Reuse fit results.')
         with open(f'{args.out}-fit.pickle', 'rb') as f:
-            result = pickle.load(f)
+            v, bs = pickle.load(f)
 
         with open(f'{args.out}-fit-norms.pickle', 'rb') as f:
             norm_results = pickle.load(f)
     else:
-        # TODO the way the flux-scale error enters here is not correct
-        # 1.: Fit spectral index
-        params = lmfit.Parameters()
-        params.add('v',750) # initial guess
-        for i in range(nimg-1):
-            params.add(f'b{i}',0.) # initial guess
-        # params['B'].set(min=B_min, max=B_min, brute_step=0.1e-10)
-        # params['v'].set(min=500, max=1200, brute_step=20)
         if args.fluxerr > 0.:
-            x0 = np.array([750, *np.zeros_like(nimg-1)])
+            x0 = np.array([750, *np.zeros(nimg-1)])
             bounds = tuple([[100,3000]] +  [[-2,3] for i in range(nimg-1)])
         else:
             x0 = [750]
@@ -434,6 +425,7 @@ if __name__ == '__main__':
         log.info('Start the spectral age model fitting (this may take a while)...')
         mini = minimize(residual_SI_aging_path, [750., 0., 0.], bounds=([100, 2000], [-2, 3], [-2, 3]))
         result = ['x'] # result = [796.225929  ,  -0.90236313,  -1.86622815]
+        v = result[0]
         if len(result) > 0:
             bs = result[1:]
         else: bs = np.zeros(nimg-1)
@@ -460,28 +452,28 @@ if __name__ == '__main__':
         # log.info('Confidence intervals')
         # cx, cy, grid = lmfit.conf_interval2d(mini, result, 'B', 'v', 30, 20, ((2.0e-10, 7e-10), (600, 1300)))
         # save to pickle
-        with open(f'{args.out}-fits.pickle', 'wb') as f:
-            pickle.dump(result, f)
-
+        with open(f'{args.out}-fit.pickle', 'wb') as f:
+            pickle.dump([v, bs], f)
+    log.info(f"Fit results: v={v:.5f} km/s, SI offsets: {bs}")
 
     # # now fit normalization
-    # params = S_model.make_params(N0=1.5e21) # initial guess
-    # norm_results = []
-    # for i, row in df.iterrows():
-    #     if not l_sel[i]: continue # only fit normalization where we also fitted the SI
-    #     x = np.array([[nu_i, B_min, args.iidx, row['l'] /(kmpers_to_kpc_per_Myr * result.params['v']), args.z] for nu_i in nus], dtype=float)
-    #     y = row[[f'F_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
-    #     yerr = row[[f'F_err_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
-    #     norm_results.append(S_model.fit(y, params, x=x, weights=(y/yerr)**2))
-    # print('Normalization factors: ', [norm_result.params['N0'] for norm_result in norm_results])
-
+    params = S_model.make_params(N0=1.5e21) # initial guess
+    norm_results = []
+    for i, row in df.iterrows():
+        if not l_sel[i]: continue # only fit normalization where we also fitted the SI
+        x = np.array([[nu_i, B_min, args.iidx, row['l'] /(kmpers_to_kpc_per_Myr * v), args.z] for nu_i in nus], dtype=float)
+        print(row[[f'F_{im.mhz}' for im in all_images]])
+        y = row[[f'F_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
+        yerr = row[[f'F_err_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
+        norm_results.append(S_model.fit(y, params, x=x, weights=(y/yerr)**2))
+    print('Normalization factors: ', [norm_result.params['N0'] for norm_result in norm_results])
     # save to pickle
-    # with open(f'{args.out}-fit-norms.pickle', 'wb') as f:
-    #     pickle.dump(norm_results, f)
+    with open(f'{args.out}-fit-norms.pickle', 'wb') as f:
+        pickle.dump(norm_results, f)
 
 
     B =  B_min # result.best_values['B']
-    velocity = result[0]*kmpers_to_kpc_per_Myr #result.params['v']
+    velocity = v*kmpers_to_kpc_per_Myr #result.params['v']
 
     ####################################################################################################################
     # do the plotting
@@ -497,8 +489,6 @@ if __name__ == '__main__':
                 'marker': 'o',
                 'xerr': np.mean(np.diff(df['l']))/2}
 
-    # TODO velocity as argument -> should also be removed from fit then!
-    # TODO BFIELD as argument -> should also be removed from fit then!
     cs = ['C0','C1', 'C2', 'C3', 'C4', 'C5', 'C7', 'C8'] # loop colors
     ### Do flux density part
     # loop through images / frequencies and get the flux densities of the best fittin model, plot measured and fitted fluxes
@@ -507,16 +497,15 @@ if __name__ == '__main__':
         df[f'F_model_hi_{im.mhz}'] = np.nan
         df[f'F_model_lo_{im.mhz}'] = np.nan
         # 1. Get the model fluxes and uncertainties for the range of distances (l_sel) that we used in the fit.
-        #    Here we have a fit for the normalization N0 and we want to plot thema.
-        # for i, (l_i, norm_result) in enumerate(zip(df['l'].values[l_sel], norm_results)):
-        #     df.loc[np.argwhere(l_sel)[i], f'F_model_{im.mhz}'] = S.evaluate(im.freq, B, args.iidx, l_i / velocity, args.z, 1.) #norm_result.params['N0'])
+        #    Here we have a fit for the normalization N0 and we want to plot them.
+        for i, (l_i, norm_result) in enumerate(zip(df['l'].values[l_sel], norm_results)):
+            df.loc[np.argwhere(l_sel)[i], f'F_model_{im.mhz}'] = S.evaluate(im.freq, B, args.iidx, l_i / velocity, args.z, norm_results) #norm_result.params['N0'])
             # df.loc[np.argwhere(l_sel)[i], f'F_model_hi_{im.mhz}'] = S.evaluate(im.freq, B, args.iidx, (l_i - results[2]) / velocity, args.z, N0_i)
         # TODO fit error
         # scale data to 144MHz using injectindex
         scale = (144e6/im.freq)**(-args.iidx)
         # plot best-fitting model - only where we fitted the model since there we have a value for the normalization TODO plot errors
-        # ax[0].plot(df['l'][l_sel], df[f'F_model_{im.mhz}'][l_sel]*scale, color=cs[j],
-        #                label=f'model {im.mhz} MHz', alpha=0.7, linewidth=lw)
+        ax[0].plot(df['l'][l_sel], df[f'F_model_{im.mhz}'][l_sel]*scale, color=cs[j], label=f'model {im.mhz} MHz', alpha=0.7, linewidth=lw)
         # plot measured fluxes and errors
         errs = np.sqrt(df[f'F_err_{im.mhz}']**2 + (df[f'F_{im.mhz}']*args.fluxerr)**2) # include systematic error
         ax[0].errorbar(df['l'], df[f'F_{im.mhz}']*scale, errs*scale,
