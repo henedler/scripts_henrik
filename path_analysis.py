@@ -289,7 +289,7 @@ if __name__ == '__main__':
     else:
         df_list = []
         for image in all_images:
-            df_thisimg = interpolate_path(args.region, image, args.z, args.fluxerr, args.injection_offset)
+            df_thisimg = interpolate_path(args.region, image, args.z, args.injection_offset)
             df_list.append(df_thisimg)
 
         df = pd.concat(df_list, axis=1)
@@ -383,9 +383,7 @@ if __name__ == '__main__':
         shift = np.array([np.log(1 + np.sqrt(2)*args.fluxerr) / np.log(nus[i]/nus[i+1]) for i in range(nimg-1)]) # for a 1 sigma change of systematic
         # this is simply the scale of the additive error, 0 +/- 1
         bs_shift = np.tile(bs*shift, (len(X),1)) # shape: (n_pts * n_imgs-1)
-        print(shift, bs, bs_shift)
         residual = np.sum(((Y + bs_shift - model.reshape((len(X), len(X[0]) - 2)) )/Yerr)**2) + np.sum(bs**2)
-        print(residual)
         return residual
 
     # define function to fit the normalizations
@@ -433,6 +431,7 @@ if __name__ == '__main__':
         else:
             x0 = [750]
             bounds = (100,3000)
+        log.info('Start the spectral age model fitting (this may take a while)...')
         mini = minimize(residual_SI_aging_path, [750., 0., 0.], bounds=([100, 2000], [-2, 3], [-2, 3]))
         result = ['x'] # result = [796.225929  ,  -0.90236313,  -1.86622815]
         if len(result) > 0:
