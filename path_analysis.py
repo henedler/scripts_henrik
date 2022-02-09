@@ -330,7 +330,7 @@ if __name__ == '__main__':
     # do the fitting
     S = lib_aging.S_model(epsrel=1.5e-2)
     B_min = 3.25e-10 * (1+args.z)**2 * 3**-0.5 # This is B_eq (syn_loss == IC loss) / sqrt(3)
-    log.info(f"Using minimum loss magnetic field B={B_min:.4f}T")
+    log.info(f"Using minimum loss magnetic field B={B_min:.4e}T")
 
     kmpers_to_kpc_per_Myr = float((u.Myr / u.s * u.km / u.kpc).decompose().to_string())
     l_sel = (0 <= df['l']) & (df['l'] - args.injection_offset <= args.max_fit_length)  # length selection
@@ -462,7 +462,7 @@ if __name__ == '__main__':
     for i, row in df.iterrows():
         if not l_sel[i]: continue # only fit normalization where we also fitted the SI
         x = np.array([[nu_i, B_min, args.iidx, row['l'] /(kmpers_to_kpc_per_Myr * v), args.z] for nu_i in nus], dtype=float)
-        print(row[[f'F_{im.mhz}' for im in all_images]])
+        # print(row[[f'F_{im.mhz}' for im in all_images]])
         y = row[[f'F_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
         yerr = row[[f'F_err_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
         norm_results.append(S_model.fit(y, params, x=x, weights=(y/yerr)**2))
