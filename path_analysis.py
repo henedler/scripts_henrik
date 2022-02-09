@@ -424,7 +424,7 @@ if __name__ == '__main__':
             bounds = (100,3000)
         log.info('Start the spectral age model fitting (this may take a while)...')
         mini = minimize(residual_SI_aging_path, [750., 0., 0.], bounds=([100, 2000], [-2, 3], [-2, 3]))
-        result = ['x'] # result = [796.225929  ,  -0.90236313,  -1.86622815]
+        result = mini['x'] # result = [796.225929  ,  -0.90236313,  -1.86622815]
         v = result[0]
         if len(result) > 0:
             bs = result[1:]
@@ -499,7 +499,7 @@ if __name__ == '__main__':
         # 1. Get the model fluxes and uncertainties for the range of distances (l_sel) that we used in the fit.
         #    Here we have a fit for the normalization N0 and we want to plot them.
         for i, (l_i, norm_result) in enumerate(zip(df['l'].values[l_sel], norm_results)):
-            df.loc[np.argwhere(l_sel)[i], f'F_model_{im.mhz}'] = S.evaluate(im.freq, B, args.iidx, l_i / velocity, args.z, norm_results) #norm_result.params['N0'])
+            df.loc[np.argwhere(l_sel)[i], f'F_model_{im.mhz}'] = S.evaluate(im.freq, B, args.iidx, l_i / velocity, args.z, norm_result.params['N0'])
             # df.loc[np.argwhere(l_sel)[i], f'F_model_hi_{im.mhz}'] = S.evaluate(im.freq, B, args.iidx, (l_i - results[2]) / velocity, args.z, N0_i)
         # TODO fit error
         # scale data to 144MHz using injectindex
