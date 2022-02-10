@@ -568,4 +568,6 @@ if __name__ == '__main__':
 
     log.info(f'Save plot to {args.out}.pdf...')
     plt.savefig(args.out+'.pdf')
+    p.join()
+    p.close()
     plt.close()

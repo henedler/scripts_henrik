@@ -16,7 +16,7 @@
 
 import numpy as np
 import logging
-from astropy.table import Table
+from astropy.table import Table, QTable
 from astropy.wcs import WCS
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -26,13 +26,13 @@ log.setLevel('INFO')
 
 def separation(c_ra,c_dec,ra,dec):
     # all values in degrees
-    return np.sqrt((np.cos(c_dec*np.pi/180.0)*(ra-c_ra))**2.0+(dec-c_dec)**2.0)
+    return np.sqrt((np.cos(c_dec.to_value('rad'))*(ra-c_ra))**2.0+(dec-c_dec)**2.0)
 
 class Cat():
     """ Wrapper class to include filtering and cross-matching utilities for astropy tables"""
     def __init__(self, cat, catname, ra=None, dec=None, wcs=None):
         if isinstance(cat, str):
-            cat = Table.read(cat)
+            cat = QTable.read(cat)
         elif isinstance(cat, Table):
             pass
         else:
@@ -150,12 +150,14 @@ class Cat():
         cat = self.cat
         label = cat2.catname
         oldv = ['RA', 'DEC'] + cols
-        newv = ['_' + s for s in oldv]
-        blankv = ['_separation', '_dRA', '_dDEC']
-        for s in newv + blankv:
-            cat[label + s] = None
-        cat[label + '_match'] = False
-        rdeg = radius / 3600.0
+        # newv = ['_' + s for s in oldv]
+        for o in oldv:
+            cat[f'{label}_{o}'], cat[f'{label}_{o}'] = None, cat2[o].unit
+        cat[label + '_match'], cat[label + '_match'].unit = False, None
+        cat[label + '_separation'], cat[label + '_separation'].unit = np.nan, u.arcsec
+        cat[label + '_dRA'], cat[label + '_dRA'].unit = np.nan, u.arcsec
+        cat[label + '_dDEC'], cat[label + '_dDEC'].unit = np.nan, u.arcsec
+        rdeg = (radius / 3600.0)* u.deg
 
         minra = np.min(cat['RA'] - rdeg)
         maxra = np.max(cat['RA'] + rdeg)
@@ -165,9 +167,9 @@ class Cat():
         cat2 = cat2[(cat2['RA'] > minra) & (cat2['RA'] < maxra) & (cat2['DEC'] > mindec) & (cat2['DEC'] < maxdec)]
         matches = 0
         for r in cat:
-            dist = 3600.0 * separation(np.array(r['RA']), np.array(r['DEC']), np.array(cat2['RA']), np.array(cat2['DEC']))
-            stab = cat2[dist < radius]
-            df = dist[dist < radius]
+            dist = separation(r['RA'], r['DEC'],cat2['RA'], cat2['DEC'])
+            stab = cat2[dist < radius*u.arcsec]
+            df = dist[dist < radius*u.arcsec]
             if len(stab) > 0:
                 # got at least one match
                 if not unique and len(stab) > 1:
@@ -176,19 +178,28 @@ class Cat():
                     df = dist[dist == np.min(dist)]
                 elif len(stab) > 1:
                     continue
-                # got an unique match
                 matches += 1
                 for i in range(len(oldv)):
                     if oldv[i] in stab.colnames:
-                        r[label + newv[i]] = stab[0][oldv[i]]
+                        r[f'{label}_{oldv[i]}'] = stab[0][oldv[i]]
                 r[label + '_separation'] = df[0]
                 r[label + '_match'] = True
-                r[label + '_dRA'] = 3600.0 * np.cos(np.pi * r['DEC'] / 180.0) * (r['RA'] - stab[0]['RA'])
-                r[label + '_dDEC'] = 3600.0 * (r['DEC'] - stab[0]['DEC'])
+                r[label + '_dRA'] =  (np.cos(r['DEC'].to_value('rad')) * (r['RA'] - stab[0]['RA'])).to('arcsec')
+                r[label + '_dDEC'] =  (r['DEC'] - stab[0]['DEC']).to('arcsec')
         print(f'{label}: matched {matches} sources')
         return self.get_matches(label)
 
     def get_matches(self, labels):
+        """
+        Return the catalogue where we have common matches between the provided labels
+        Parameters
+        ----------
+        labels: list, labels of the catalogues where we want the matches
+
+        Returns
+        -------
+        Cat object, catalogue where we have the matches
+        """
         if isinstance(labels,str): labels = [labels]
         keys = [label+'_match' for label in labels]
         for i, key in enumerate(keys):
@@ -198,6 +209,21 @@ class Cat():
                 matched &= self[key]
         print(f'Found {np.sum(matched)} common matches')
         return self[matched]
+
+    def write(self, path, overwrite=False):
+        """
+        Write to a catalogue file.
+        Parameters
+        ----------
+        path: string or path-like
+        overwrite: boolean
+        """
+        for col in self.cat.columns:
+            try:
+                del col.format
+            except ValueError:
+                pass
+        self.cat.write(path, overwrite=overwrite)
 
 
 class RadioCat(Cat):
