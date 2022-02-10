@@ -18,6 +18,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('model', help='First input fits file.', type=str, default=None)
     parser.add_argument("image", help="Second input fits file", type=str, default=None)
+    parser.add_argument("--tflux", default=None, type=float, help="If provided, rescale model to this total flux")
 
     args = parser.parse_args()
     model = lib_fits.Image(args.model)
@@ -28,6 +29,9 @@ if __name__ == '__main__':
     model.set_beam((1e-10,1e-10,0)) # zero does not work
     total_flux = np.nansum(model.img_data)
     print(f'Total flux = {total_flux}')
+
+    if args.tflux is not None:
+        model.img_data *= args.tflux/total_flux
 
     model.convolve(image.get_beam(), stokes=False)
     pix_area = model.get_beam_area('pix')
@@ -40,7 +44,7 @@ if __name__ == '__main__':
 
     image.img_data = image.img_data + arr
 
-    image.write(args.image.split('.fits')[0] + '-added.fits')
+    image.write(args.image.split('.fits')[0] + '-restored.fits')
 
 
 

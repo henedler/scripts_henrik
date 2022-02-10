@@ -28,9 +28,9 @@ def separation(c_ra,c_dec,ra,dec):
     # all values in degrees
     return np.sqrt((np.cos(c_dec*np.pi/180.0)*(ra-c_ra))**2.0+(dec-c_dec)**2.0)
 
-class RadioCat():
+class Cat():
     """ Wrapper class to include filtering and cross-matching utilities for astropy tables"""
-    def __init__(self, cat, catname, col_tflux='Total_flux', col_pflux='Peak_flux', col_maj='Maj', ra='RA', dec='DEC', wcs=None, resolution=None, scale=1.0):
+    def __init__(self, cat, catname, ra=None, dec=None, wcs=None):
         if isinstance(cat, str):
             cat = Table.read(cat)
         elif isinstance(cat, Table):
@@ -38,28 +38,27 @@ class RadioCat():
         else:
             raise TypeError(f"cat must be a filename or astropy Table, not {type(cat)}")
         # fix column names and units
-        if col_tflux:
-            cat['Total_flux'] = scale*cat[col_tflux].to('Jy')
-            try:
-                cat['E_Total_flux'] = scale*cat['e_' + col_tflux].to('Jy')
-            except KeyError:
-                cat['E_Total_flux'] = scale*cat['E_' + col_tflux].to('Jy')
-        if col_pflux:
-            cat['Peak_flux'] = scale*cat[col_pflux].to('Jy/beam')
-            try:
-                cat['E_Peak_flux'] = scale*cat['e_' + col_pflux].to('Jy/beam')
-            except KeyError:
-                cat['E_Peak_flux'] = scale*cat['E_' + col_pflux].to('Jy/beam')
-        if col_maj:
-            cat['Maj'] = cat[col_maj].to('degree')
         if ra:
             cat['RA'] = cat[ra].to('degree')
+        else:
+            for racol in ['RA', 'RAJ2000', 'RA_J2000']:
+                try:
+                    cat['RA'] = cat[racol].to('degree')
+                    break
+                except KeyError:
+                    pass
         if dec:
             cat['DEC'] = cat[dec].to('degree')
+        else:
+            for decol in ['DEC', 'DECJ2000', 'DEJ2000', 'DE_J2000', 'DEC_J2000']:
+                try:
+                    cat['DEC'] = cat[decol].to('degree')
+                    break
+                except KeyError:
+                    pass
         self.cat = cat
         self.wcs = wcs
         self.catname = catname
-        self.resolution = resolution
 
     def __len__(self):
         return len(self.cat)
@@ -87,6 +86,142 @@ class RadioCat():
 
     def keys(self):
         return self.cat.keys()
+
+    def filter(self, isolation=None, rectangle=None, circle=None, ellipse=None):
+        """
+        Filter the catalogue on a variety of properties.
+
+        Parameters
+        ----------
+        isolation: float, optional.
+            Source isolation in arcsec.
+        rectangle: (4,) array-like.
+            Filter for sources in a rectangle defined by [minra, maxra, mindec, maxdec]
+        circle: (3,) array-like.
+            [RA, DEC, radius] in deg for circle filtering.
+        ellipse: (5,) array-like
+            [RA, DEC, height, width, angle] of filter ellipse in degree.
+        """
+        cat = self.cat
+        logstr = f'Filter {self.catname}. Initial:{len(cat)}'
+        if rectangle: # filter in rectangle
+            i = (cat['RA'] > rectangle[0]) & (cat['RA'] < rectangle[1]) & (cat['DEC'] > rectangle[2]) & (cat['DEC'] < rectangle[3])
+            cat =  cat[i]
+            logstr += f'->rectangle:{len(cat)}'
+        if circle: # filter in circle
+            r = separation(circle[0], circle[1], cat['RA'], cat['DEC'])
+            cat['center_dist'] = r
+            cat = cat[cat['center_dist'] < circle[2]]
+            logstr += f'->circle:{len(cat)}'
+        if ellipse: # filter in ellipse (e.g. for primary beam)
+            from regions import EllipseSkyRegion
+            if not self.wcs:
+                raise ValueError('Need catalog with wcs to apply ellipse filter.')
+            sc = SkyCoord(ellipse[0], ellipse[1], unit='degree')
+            region_sky = EllipseSkyRegion(center=sc, height=2 * ellipse[2] * u.deg, width=2 * ellipse[3] * u.deg, angle= ellipse[4] * u.deg)
+            in_beam = region_sky.contains(SkyCoord(cat['RA'], cat['DEC'], unit='degree'), self.wcs)
+            cat = cat[in_beam]
+            logstr += f'->ellipse:{len(cat)}'
+        if isolation:
+            cat['NN_dist']=np.nan
+            for row in cat:
+                dist=3600.0*separation(row['RA'],row['DEC'],cat['RA'],cat['DEC'])
+                dist.sort()
+                row['NN_dist']=dist[1]
+            cat=cat[cat['NN_dist']> isolation]
+            logstr += f'->isolation:{len(cat)}'
+        # log.info(logstr)
+        print(logstr)
+        self.cat = cat
+
+    def match(self, cat2, radius, cols=[], unique=True):
+        """
+        Match this catalogue with another.
+        Parameters
+        ----------
+        cat2: RadioCat object, catalogue to match with.
+        radius: float, match radius in arcsec
+        cols: list, non-standard columns of matchcat to transfer to new cat.
+
+        Returns
+        -------
+        n_match: int, number of matches
+        """
+        cat = self.cat
+        label = cat2.catname
+        oldv = ['RA', 'DEC'] + cols
+        newv = ['_' + s for s in oldv]
+        blankv = ['_separation', '_dRA', '_dDEC']
+        for s in newv + blankv:
+            cat[label + s] = None
+        cat[label + '_match'] = False
+        rdeg = radius / 3600.0
+
+        minra = np.min(cat['RA'] - rdeg)
+        maxra = np.max(cat['RA'] + rdeg)
+        mindec = np.min(cat['DEC'] - rdeg)
+        maxdec = np.max(cat['DEC'] + rdeg)
+        # pre-filter tab, which may be all-sky
+        cat2 = cat2[(cat2['RA'] > minra) & (cat2['RA'] < maxra) & (cat2['DEC'] > mindec) & (cat2['DEC'] < maxdec)]
+        matches = 0
+        for r in cat:
+            dist = 3600.0 * separation(np.array(r['RA']), np.array(r['DEC']), np.array(cat2['RA']), np.array(cat2['DEC']))
+            stab = cat2[dist < radius]
+            df = dist[dist < radius]
+            if len(stab) > 0:
+                # got at least one match
+                if not unique and len(stab) > 1:
+                    print(f"Non-unique match {len(stab)} - using closest match.")
+                    stab = cat2[dist == np.min(dist)]
+                    df = dist[dist == np.min(dist)]
+                elif len(stab) > 1:
+                    continue
+                # got an unique match
+                matches += 1
+                for i in range(len(oldv)):
+                    if oldv[i] in stab.colnames:
+                        r[label + newv[i]] = stab[0][oldv[i]]
+                r[label + '_separation'] = df[0]
+                r[label + '_match'] = True
+                r[label + '_dRA'] = 3600.0 * np.cos(np.pi * r['DEC'] / 180.0) * (r['RA'] - stab[0]['RA'])
+                r[label + '_dDEC'] = 3600.0 * (r['DEC'] - stab[0]['DEC'])
+        print(f'{label}: matched {matches} sources')
+        return self.get_matches(label)
+
+    def get_matches(self, labels):
+        if isinstance(labels,str): labels = [labels]
+        keys = [label+'_match' for label in labels]
+        for i, key in enumerate(keys):
+            if i == 0:
+                matched = self[key].copy()
+            else:
+                matched &= self[key]
+        print(f'Found {np.sum(matched)} common matches')
+        return self[matched]
+
+
+class RadioCat(Cat):
+    """ Wrapper class to include filtering and cross-matching utilities for astropy tables"""
+    def __init__(self, cat, catname, col_tflux='Total_flux', col_pflux='Peak_flux', col_maj='Maj', ra='RA', dec='DEC', wcs=None, resolution=None, scale=1.0):
+        # super class
+        Cat.__init__(self, cat, catname, ra, dec, wcs)
+        cat = self.cat
+        # fix column names and units
+        if col_tflux:
+            cat['Total_flux'] = scale*cat[col_tflux].to('Jy')
+            try:
+                cat['E_Total_flux'] = scale*cat['e_' + col_tflux].to('Jy')
+            except KeyError:
+                cat['E_Total_flux'] = scale*cat['E_' + col_tflux].to('Jy')
+        if col_pflux:
+            cat['Peak_flux'] = scale*cat[col_pflux].to('Jy/beam')
+            try:
+                cat['E_Peak_flux'] = scale*cat['e_' + col_pflux].to('Jy/beam')
+            except KeyError:
+                cat['E_Peak_flux'] = scale*cat['E_' + col_pflux].to('Jy/beam')
+        if col_maj:
+            cat['Maj'] = cat[col_maj].to('degree')
+        self.resolution = resolution
 
     def filter(self, isolation=None, rectangle=None, circle=None, ellipse=None, sigma=5, size=None, peak_to_total=None, minflux=None):
         """
@@ -153,7 +288,7 @@ class RadioCat():
         print(logstr)
         self.cat = cat
 
-    def match(self, cat2, radius, cols=[]):
+    def match(self, cat2, radius, cols=[], **kwargs):
         """
         Match this catalogue with another.
         Parameters
@@ -166,50 +301,9 @@ class RadioCat():
         -------
         n_match: int, number of matches
         """
-        cat = self.cat
-        label = cat2.catname
-        oldv = ['Total_flux', 'E_Total_flux', 'Peak_flux', 'E_Peak_flux', 'RA', 'DEC']
-        newv = ['_' + s for s in oldv]
-        blankv = ['_separation', '_dRA', '_dDEC']
-        for s in newv + blankv + cols:
-            cat[label + s] = None
-        cat[label + '_match'] = False
-        rdeg = radius / 3600.0
-
-        minra = np.min(cat['RA'] - rdeg)
-        maxra = np.max(cat['RA'] + rdeg)
-        mindec = np.min(cat['DEC'] - rdeg)
-        maxdec = np.max(cat['DEC'] + rdeg)
-        # pre-filter tab, which may be all-sky
-        cat2 = cat2[(cat2['RA'] > minra) & (cat2['RA'] < maxra) & (cat2['DEC'] > mindec) & (cat2['DEC'] < maxdec)]
-        matches = 0
-        for r in cat:
-            dist = 3600.0 * separation(np.array(r['RA']), np.array(r['DEC']), np.array(cat2['RA']), np.array(cat2['DEC']))
-            stab = cat2[dist < radius]
-            df = dist[dist < radius]
-            if len(stab) == 1:
-                # got an unique match
-                matches += 1
-                for i in range(len(oldv)):
-                    if oldv[i] in stab.colnames:
-                        r[label + newv[i]] = stab[0][oldv[i]]
-
-                r[label + '_separation'] = df[0]
-                r[label + '_match'] = True
-                r[label + '_dRA'] = 3600.0 * np.cos(np.pi * r['DEC'] / 180.0) * (r['RA'] - stab[0]['RA'])
-                r[label + '_dDEC'] = 3600.0 * (r['DEC'] - stab[0]['DEC'])
-        print(f'{label}: matched {matches} sources')
-        return matches
-
-    def get_matches(self, labels):
-        keys = [label+'_match' for label in labels]
-        for i, key in enumerate(keys):
-            if i == 0:
-                matched = self[key].copy()
-            else:
-                matched &= self[key]
-        print(f'Found {np.sum(matched)} common matches')
-        return self[matched]
+        if isinstance(cat2, RadioCat):
+            cols = np.unique(['Total_flux', 'E_Total_flux', 'Peak_flux', 'E_Peak_flux'].append(cols))
+        return Cat.match(self, cat2, radius, cols=cols, **kwargs)
 
     def print_ratios(self, labels):
         t = self.get_matches(labels)

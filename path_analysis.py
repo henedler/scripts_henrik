@@ -357,10 +357,9 @@ if __name__ == '__main__':
         Uses from above:
         X: (n_pt, 1 + n_nu) array. Contains input points, the two cols are [number of points, [distance, nu1, nu2,...nui]].
         B_min: minimum aging mag field
-        args.fluxerr: fractional error of flux density scales
         Parameters
         ----------
-        p: object, input parameters [v, b1, ..., bn-1] where v velocity in km/s and bi are the relative errors in the flux scales - b1 = s1/s1 etc.
+        p: object, input parameters [v, b1, ..., bn-1] where v velocity in km/s and bi are the relative errors in the flux scales - b1 = s1/s2 etc.
 
         Returns
         -------
@@ -423,7 +422,9 @@ if __name__ == '__main__':
             x0 = [750]
             bounds = (100,3000)
         log.info('Start the spectral age model fitting (this may take a while)...')
-        mini = minimize(residual_SI_aging_path, [750., 0., 0.], bounds=([100, 2000], [-2, 3], [-2, 3]))
+        mini = minimize(residual_SI_aging_path, x0, bounds=bounds)
+        print(mini)
+        print(mini['fun'], np.product(np.shape(X[0,:-1])) + nimg - 1, np.shape(X[0,:-1]))
         result = mini['x'] # result = [796.225929  ,  -0.90236313,  -1.86622815]
         v = result[0]
         if len(result) > 0:
@@ -454,14 +455,17 @@ if __name__ == '__main__':
         # save to pickle
         with open(f'{args.out}-fit.pickle', 'wb') as f:
             pickle.dump([v, bs], f)
-    log.info(f"Fit results: v={v:.5f} km/s, SI offsets: {bs}")
+
+    si_offsets = np.array([np.log(1 + np.sqrt(2)*args.fluxerr) / np.log(nus[i]/nus[i+1]) for i in range(nimg-1)]) # for a 1 sigma change of systematic
+
+    log.info(f"Fit results: v={v:.5f} km/s, SI offsets:{np.array(bs)*si_offsets} ({bs} sigma)")
 
     # # now fit normalization
     params = S_model.make_params(N0=1.5e21) # initial guess
     norm_results = []
     for i, row in df.iterrows():
         if not l_sel[i]: continue # only fit normalization where we also fitted the SI
-        x = np.array([[nu_i, B_min, args.iidx, row['l'] /(kmpers_to_kpc_per_Myr * v), args.z] for nu_i in nus], dtype=float)
+        x = np.array([[nu_i, B_min, args.iidx, row['l'] / (kmpers_to_kpc_per_Myr * v), args.z] for nu_i in nus], dtype=float)
         # print(row[[f'F_{im.mhz}' for im in all_images]])
         y = row[[f'F_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
         yerr = row[[f'F_err_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
