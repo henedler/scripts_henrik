@@ -423,9 +423,8 @@ if __name__ == '__main__':
             bounds = (100,3000)
         log.info('Start the spectral age model fitting (this may take a while)...')
         mini = minimize(residual_SI_aging_path, x0, bounds=bounds)
-        print(mini)
-        print(mini['fun'], np.product(np.shape(X[0,:-1])) + nimg - 1, np.shape(X[0,:-1]))
-        result = mini['x'] # result = [796.225929  ,  -0.90236313,  -1.86622815]
+        print(f"Fit chi-sq={mini['fun']}, d.o.f.={np.product(np.shape(X[:,:-1])) + nimg - 1}")
+        result = mini['x']
         v = result[0]
         if len(result) > 0:
             bs = result[1:]
@@ -568,6 +567,4 @@ if __name__ == '__main__':
 
     log.info(f'Save plot to {args.out}.pdf...')
     plt.savefig(args.out+'.pdf')
-    p.join()
-    p.close()
     plt.close()

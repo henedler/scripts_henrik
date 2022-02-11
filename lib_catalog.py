@@ -16,7 +16,7 @@
 
 import numpy as np
 import logging
-from astropy.table import Table, QTable
+from astropy.table import Table, QTable, Column
 from astropy.wcs import WCS
 import astropy.units as u
 from astropy.coordinates import SkyCoord
@@ -32,7 +32,7 @@ class Cat():
     """ Wrapper class to include filtering and cross-matching utilities for astropy tables"""
     def __init__(self, cat, catname, ra=None, dec=None, wcs=None):
         if isinstance(cat, str):
-            cat = QTable.read(cat)
+            cat = Table.read(cat)
         elif isinstance(cat, Table):
             pass
         else:
@@ -79,7 +79,13 @@ class Cat():
         return nextrow
 
     def __getitem__(self, key):
-        return self.cat[key]
+        if not isinstance(key, str) and not isinstance(key, int) and hasattr(key, '__len__'): # case1: index with boolean mask - return a copy of object with boolean mask applied to internal cat
+            try:
+                mask = np.array(key).astype(bool)
+                return Cat(self.cat[mask], self.catname)
+            except ValueError: pass
+        else:# case2: string mask, return column of internal cat
+            return self.cat[key]
 
     def __setitem__(self, key, value):
         self.cat[key] = value
@@ -150,15 +156,13 @@ class Cat():
         cat = self.cat
         label = cat2.catname
         oldv = ['RA', 'DEC'] + cols
-        # newv = ['_' + s for s in oldv]
         for o in oldv:
-            cat[f'{label}_{o}'], cat[f'{label}_{o}'] = None, cat2[o].unit
-        cat[label + '_match'], cat[label + '_match'].unit = False, None
-        cat[label + '_separation'], cat[label + '_separation'].unit = np.nan, u.arcsec
-        cat[label + '_dRA'], cat[label + '_dRA'].unit = np.nan, u.arcsec
-        cat[label + '_dDEC'], cat[label + '_dDEC'].unit = np.nan, u.arcsec
+            cat.add_column(Column(0, name=f'{label}_{o}', dtype=cat2[o].dtype, unit=cat2[o].unit))
+        mcols = [f'{label}_{suff}' for suff in ['separation','dRA','dDEC']]
+        for mc in mcols:
+            cat.add_column(Column(0., name=mc, unit=u.arcsec))
+        cat[f'{label}_match'] = False
         rdeg = (radius / 3600.0)* u.deg
-
         minra = np.min(cat['RA'] - rdeg)
         maxra = np.max(cat['RA'] + rdeg)
         mindec = np.min(cat['DEC'] - rdeg)
@@ -167,7 +171,7 @@ class Cat():
         cat2 = cat2[(cat2['RA'] > minra) & (cat2['RA'] < maxra) & (cat2['DEC'] > mindec) & (cat2['DEC'] < maxdec)]
         matches = 0
         for r in cat:
-            dist = separation(r['RA'], r['DEC'],cat2['RA'], cat2['DEC'])
+            dist = separation(r['RA']*cat['RA'].unit, r['DEC']*cat['DEC'].unit, cat2['RA'], cat2['DEC'])
             stab = cat2[dist < radius*u.arcsec]
             df = dist[dist < radius*u.arcsec]
             if len(stab) > 0:
@@ -180,12 +184,11 @@ class Cat():
                     continue
                 matches += 1
                 for i in range(len(oldv)):
-                    if oldv[i] in stab.colnames:
-                        r[f'{label}_{oldv[i]}'] = stab[0][oldv[i]]
-                r[label + '_separation'] = df[0]
+                    r[f'{label}_{oldv[i]}'] = stab[0][oldv[i]]
+                r[label + '_separation'] = df[0].to_value('arcsec')
                 r[label + '_match'] = True
-                r[label + '_dRA'] =  (np.cos(r['DEC'].to_value('rad')) * (r['RA'] - stab[0]['RA'])).to('arcsec')
-                r[label + '_dDEC'] =  (r['DEC'] - stab[0]['DEC']).to('arcsec')
+                r[label + '_dRA'] =  (np.cos(r['DEC']*np.pi/180) * (r['RA']*u.deg - stab[0]['RA']*u.deg)).to_value('arcsec')
+                r[label + '_dDEC'] =  (r['DEC']*u.deg - stab[0]['DEC']*u.deg).to_value('arcsec')
         print(f'{label}: matched {matches} sources')
         return self.get_matches(label)
 
@@ -208,9 +211,9 @@ class Cat():
             else:
                 matched &= self[key]
         print(f'Found {np.sum(matched)} common matches')
-        return self[matched]
+        return Cat(self[matched], self.catname)
 
-    def write(self, path, overwrite=False):
+    def write(self, path, overwrite=False, format=None):
         """
         Write to a catalogue file.
         Parameters
@@ -218,12 +221,7 @@ class Cat():
         path: string or path-like
         overwrite: boolean
         """
-        for col in self.cat.columns:
-            try:
-                del col.format
-            except ValueError:
-                pass
-        self.cat.write(path, overwrite=overwrite)
+        self.cat.write(path, overwrite=overwrite, format=format)
 
 
 class RadioCat(Cat):
