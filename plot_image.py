@@ -5,6 +5,7 @@ import numpy as np
 import argparse
 import logging
 from lib_fits import flatten, Image
+from astropy.io import fits
 
 import matplotlib
 matplotlib.use('Agg') # aplpy api suggestion
@@ -76,14 +77,20 @@ n_contour = 9
 
 
 logging.info('Setting up...')
-header, data = flatten(filename)
+if plottype != 'stokes':
+    with fits.open(filename) as fitsimage:
+        header = fitsimage[0].header
+        data = fitsimage[0].data
+else:
+    header, data = flatten(filename)
+
 img = Image(filename)
 if plottype in ['stokes']:
     data *= 1e3 # to mJy
     if args.noise:
         sigma = args.noise
     else:
-        sigma = img.calc_noise(betaSigma=True) * 1e3
+        sigma = img.calc_noise() * 1e3
     logging.info(f'Noise is {sigma:.2e} mJy/beam')
 
 wcs = WCS(header)
@@ -107,12 +114,15 @@ if plottype == 'si+err':
 
 # normalizer
 if plottype == 'stokes':
-    interval = AsymmetricPercentileInterval(65, 99.8)#99.99)  # 80 - 99.99 percentile
-    # interval = AsymmetricPercentileInterval(80, 99.995)#99.99)  # 80 - 99.99 percentile
     if stretch_type == 'sqrt':
+        interval = AsymmetricPercentileInterval(20, 99.9)  # 99.99)  # 80 - 99.99 percentile
         stretch = SqrtStretch()
     elif stretch_type == 'log':
+        interval = AsymmetricPercentileInterval(80, 99.999)#99.99)  # 80 - 99.99 percentile
         stretch = LogStretch()
+    elif stretch_type == 'linear':
+        interval = AsymmetricPercentileInterval(60, 99.9)  # 99.99)  # 80 - 99.99 percentile
+        stretch = LinearStretch()
     else:
         print('Stretch type unknown.')
         sys.exit(0)
@@ -160,7 +170,6 @@ if plottype in ['si','si+err']:
         im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='turbo', norm=norm)
     elif plottype == 'si+err':
         low_cut = np.percentile(data_alpha[~np.isnan(data_alpha)], 15)
-        print(low_cut)
         data_alpha[data_alpha < low_cut] = low_cut
         alpha = 0.7 * (np.nanmin(data_alpha)/data_alpha)**2 + 0.3
         alpha[np.isnan(alpha)] = 0.3
@@ -181,14 +190,13 @@ elif plottype == 'curvature':
 elif plottype == 'curverr':
     im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='RdPu', norm=norm)
 else:
-    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='Oranges', norm=norm)
-    im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='cubehelix', norm=norm) # 'cubehelix',
+    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='YlOrRed', norm=norm)
+    im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='cubehelix', norm=norm) # Try YlOrRed,
 
 # contours
 if show_contours:
     print("Contour...")
     contour_limits = contout_base_sigma * 2**np.arange(n_contour) * sigma
-    print(contour_limits)
     ax.contour(data, transform=ax.get_transform(WCS(header)), levels=contour_limits, colors='grey', alpha=0.7)
     ax.contour(data, transform=ax.get_transform(WCS(header)), levels=-contour_limits[::-1], colors='grey', alpha=0.7, linestyles='dashed')
 

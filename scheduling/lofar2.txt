@@ -1,0 +1,16 @@
+# for 15"
+./grid_sensitivity.py -o 15arcsec -m LBA_ALL -f 40 -b 48 -n 38 allsky-grid-lofar2survey.fits
+
+# for IS cut at 2 deg and upper half of the band - with smearing at 2s and 32 ch/sb
+./grid_sensitivity.py -o 1arcsec -m LBA_ALL -f 52 -b 24 -n 52 -c 2 --smearing 2 0.00625 1 allsky-grid-lofar2survey.fits
+
+####################
+# LOFAR2 virgo survey
+./grid_sensitivity.py -o virgo/virgo15as -m LBA_ALL -f 40 -b 48 -n 38 --plotcenters --recenter 187.7050 12.3911 0 900 1200 virgo/virgo-grid.fits
+./grid_sensitivity.py -o virgo/virgo1arcsec -m LBA_ALL -f 52 -b 24 -n 52 -c 2 --plotcenters --recenter 187.7050 12.3911 0 900 1200 virgo/virgo-grid.fits
+
+####################
+# LBA LOFAR1 virgo survey
+~/opt/bin/scripts_henrik/scheduling/grid_sensitivity.py -o virgoLBA20as -m LBA_SPARSE -f 54 -b 24 -n 38 --plotcenters  --recenter 187.7050 12.3911 0 900 1200 virgo/virgo-grid.fits
+#./grid_sensitivity.py -o virgo/virgo1arcsec -m LBA_ALL -f 52 -b 24 -n 52 -c 2 --plotcenters --recenter 187.7050 12.3911 0 900 1200 virgo/virgo-grid.fits
+

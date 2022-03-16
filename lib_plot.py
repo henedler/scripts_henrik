@@ -71,7 +71,7 @@ def addScalebar(ax, wcs, z, kpc,  fontsize, color='black'):
     degperkpc = cosmo.arcsec_per_kpc_proper(z).value/3600.
     pixelperkpc = degperkpc/degperpixel
     fontprops = fm.FontProperties(size=fontsize)
-    scalebar = AnchoredSizeBar(ax.transData, kpc*pixelperkpc, '%i kpc' % kpc, 'lower right', fontproperties=fontprops, pad=0.5, color=color, frameon=False, sep=5, label_top=True, size_vertical=2)
+    scalebar = AnchoredSizeBar(ax.transData, kpc*pixelperkpc, '%i kpc' % kpc, 'lower right', fontproperties=fontprops, pad=0.5, color=color, frameon=False, sep=5, label_top=True, size_vertical=1)
     ax.add_artist(scalebar)
 
 

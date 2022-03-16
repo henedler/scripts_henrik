@@ -17,10 +17,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-#./fitscutout.py fitsfile [set position and size below]
-position = (4776, 3266) # pixel
-size = (700, 700) # pixel
-
 import os, sys, re
 import numpy as np
 from astropy.io import fits
@@ -46,10 +42,13 @@ if __name__ == '__main__':
     if args.cat:
         cat = Cat(args.cat, 'evcc')
         cat['VCC'] = np.array(cat['VCC'], dtype=int)
+        cat['EVCC'] = np.array(cat['EVCC'], dtype=int)
         # cat['NGC'] = np.array([n.replace(' ','0') for n in cat['NGC']], dtype=int)
-        print(type(cat[cat['VCC'] > 0]))
         cat = cat[(cat['VCC'] > 0) | (cat['NGC'] != ' ')]
+        # cat = cat[(cat['VCC'] == 0) & (cat['NGC'] == ' ')]
+        print(cat['VCC'], cat['NGC'])
         print('restrict to VCC and NGC: ', len(cat))
+        # print('restrict to not VCC and not NGC: ', len(cat))
 
     img = Image(args.image)
     beam = img.get_beam()
@@ -90,13 +89,46 @@ if __name__ == '__main__':
                         name = f'VCC{row["VCC"]}'
                     elif row['NGC'] != ' ':
                         name = f'NGC{row["NGC"]}'
-                    else: raise ValueError('Neither VCC not NGC found...')
+                    else:
+                        name = f'EVCC{row["EVCC"]}'
+                    # else: raise ValueError('Neither VCC not NGC found...')
+                    # if name not in [
+                    #     'VCC92',
+                    #     'VCC183',
+                    #     'VCC186',
+                    #     'VCC188',
+                    #     'VCC190',
+                    #     'VCC224',
+                    #     'VCC297',
+                    #     'VCC350',
+                    #     'VCC564',
+                    #     'VCC580',
+                    #     'VCC921',
+                    #     'VCC989',
+                    #     'VCC1001',
+                    #     'VCC1036',
+                    #     'VCC1047',
+                    #     'VCC1145',
+                    #     'VCC1188',
+                    #     'VCC1250',
+                    #     'VCC1257',
+                    #     'VCC1290',
+                    #     'VCC1293',
+                    #     'VCC1353',
+                    #     'VCC1489',
+                    #     'VCC1540',
+                    #     'VCC1562',
+                    #     'VCC1939',
+                    #     'NGC4746',
+                    #     'NGC4710']:
+                    #     continue
                     try:
                         t = Ned.get_table(name, table='diameters')
                         d = t['NED Position Angle'][~np.isnan(t['NED Position Angle'])]
                     except astroquery.exceptions.RemoteServiceError: pass
                     pa = np.rad2deg(np.arctan2(np.sin(d * np.pi / 180).sum(), np.cos(d * np.pi / 180).sum()))
-                    center = SkyCoord(row['RA'], row['DEC'], unit='deg', frame='fk5')
+                    center = SkyCoord(row['RA'], row['DEC'], unit='deg', frame='fk5'
+                                      )
                     rad = row['Rad']*u.arcsec  if row['Rad']*u.arcsec > 30*u.arcsec else 30*u.arcsec
                     region = EllipseSkyRegion(center=center, height=rad, width=rad, angle=pa*u.deg ,meta={'text':name}, visual={'color':'red'})
                     bg = CircleAnnulusSkyRegion(center=center, inner_radius=3*u.arcmin, outer_radius=6*u.arcmin, meta={'text':name}, visual={'color':'blue'})
@@ -110,6 +142,8 @@ if __name__ == '__main__':
                     bg.serialize(format='ds9')
                     bg_regions.append(bg)
 
+                # write_ds9(regions, f'templates/evccman-{i:02}.reg',  overwrite=True)
+                # write_ds9(bg_regions, f'templates/bg-evccman-{i:02}.reg',  overwrite=True)
                 write_ds9(regions, f'templates/vccngc-{i:02}.reg',  overwrite=True)
                 write_ds9(bg_regions, f'templates/bg-vccngc-{i:02}.reg',  overwrite=True)
             i+=1

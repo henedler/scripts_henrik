@@ -22,12 +22,9 @@ import os, sys, argparse, logging
 import numpy as np
 from lib_linearfit import linear_fit_bootstrap, linsq_spidx
 import lib_fits
+from lib_fits import AllImages
 from astropy.io import fits as pyfits
 from astropy.wcs import WCS as pywcs
-from astropy.coordinates import match_coordinates_sky
-from astropy.coordinates import SkyCoord
-import astropy.units as u
-import pyregion
 # https://github.com/astrofrog/reproject
 from reproject import reproject_interp, reproject_exact
 reproj = reproject_exact
@@ -73,18 +70,17 @@ if args.radec is not None and len(args.radec) != 2:
 if __name__ == '__main__':
     ########################################################
     # prepare images and make catalogues if necessary
-    all_images = lib_fits.AllImages([imagefile for imagefile in args.images])
+    all_images = AllImages([imagefile for imagefile in args.images])
 
     #####################################################
     # find+apply shift w.r.t. first image
     if args.shift:
         if all_images.suffix_exists('si-shift') and not args.force:
             logging.info('Reuse si-shift images.')
-            all_images = lib_fits.AllImages([name.replace('.fits', '-si-shift.fits') for name in all_images.filenames])
+            all_images = AllImages([name.replace('.fits', '-si-shift.fits') for name in all_images.filenames])
         else:
             all_images.align_catalogue()
             if args.save: all_images.write('si-shift')
-
 
     #########################################################
     # convolve
@@ -102,7 +98,7 @@ if __name__ == '__main__':
         logging.info('Reuse si-regr images.')
         all_images = lib_fits.AllImages([name.replace('.fits', '-si-conv-regr.fits') for name in all_images.filenames])
     else:
-        all_images.regrid_common(args.size, args.radec, pix_per_bmin=5)
+        all_images.regrid_common(size=args.size, radec=args.radec)
         if args.save: all_images.write('si-conv-regr')
 
     for i, image in enumerate(all_images):

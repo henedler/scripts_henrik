@@ -77,7 +77,7 @@ def convert_segment_region_to_lines(file):
                 else:
                     file_o.writelines(line)
 
-def fit_path_to_regions(region, image, z, spacing='beam'):
+def fit_path_to_regions(region, image, z, spacing=1/3600):
     """
     TODO: This is kinda lost here... Maybe move somewhere else
     Fit a path to a number of ds9 point regions. Then, return points on this path at a certain spacing.
@@ -276,7 +276,7 @@ if __name__ == '__main__':
         all_images = lib_fits.AllImages([name.replace('.fits', '-convolve-regrid.fits') for name in all_images.filenames])
     else:
         log.info('Recenter, convolve and regrid all images')
-        all_images.convolve_to(circbeam=True) # elliptical beam seems buggy in some cases. Also, circ beam is nice to treat covariance matrix of pixels
+        all_images.convolve_to(circbeam=True)
         all_images.regrid_common(pixscale=1)
         all_images.write('convolve-regrid')
 
@@ -417,10 +417,10 @@ if __name__ == '__main__':
     else:
         if args.fluxerr > 0.:
             x0 = np.array([750, *np.zeros(nimg-1)])
-            bounds = tuple([[100,3000]] +  [[-2,3] for i in range(nimg-1)])
+            bounds = tuple([[100,5000]] +  [[-2,3] for i in range(nimg-1)])
         else:
             x0 = [750]
-            bounds = (100,3000)
+            bounds = ([10,5000])
         log.info('Start the spectral age model fitting (this may take a while)...')
         mini = minimize(residual_SI_aging_path, x0, bounds=bounds)
         print(f"Fit chi-sq={mini['fun']}, d.o.f.={np.product(np.shape(X[:,:-1])) + nimg - 1}")

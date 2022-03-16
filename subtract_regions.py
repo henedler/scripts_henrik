@@ -110,6 +110,7 @@ with w.if_todo('image_subtracted_lowres'):
                          niter=1000000,
                          no_update_model_required='',
                          maxuv_l=20000,
+                         minuv_l=100,
                          mgain=0.80,
                          multiscale='',
                          multiscale_gain=0.15,
