@@ -331,7 +331,7 @@ if __name__ == '__main__':
     log.info(f"Using minimum loss magnetic field B={B_min:.4e}T")
 
     kmpers_to_kpc_per_Myr = float((u.Myr / u.s * u.km / u.kpc).decompose().to_string())
-    l_sel = (0 <= df['l']) & (df['l'] - args.injection_offset <= args.max_fit_length)  # length selection
+    l_sel = (0 <= df['l'].values) & (df['l'].values - args.injection_offset <= args.max_fit_length)  # length selection
 
     p = multiprocessing.Pool(multiprocessing.cpu_count())
     # Define X and Y data for the fit!
@@ -417,10 +417,10 @@ if __name__ == '__main__':
             norm_results = pickle.load(f)
     else:
         if args.fluxerr > 0.:
-            x0 = np.array([750, *np.zeros(nimg-1)])
+            x0 = np.array([500, *np.zeros(nimg-1)])
             # bounds = tuple([[100,5000]] +  [[-2,3] for i in range(nimg-1)])
         else:
-            x0 = [750]
+            x0 = [500]
             # bounds = ([[10,5000]])
         log.info('Start the spectral age model fitting (this may take a while)...')
         mini = minimize(residual_SI_aging_path, x0)#, bounds=bounds)
