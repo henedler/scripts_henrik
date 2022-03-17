@@ -364,7 +364,10 @@ if __name__ == '__main__':
         merit: float, residual cost function, weighted by (Y/Yerr)**2
         """
         global X, Y, Yerr
-        v, bs = param[0], param[1:]
+        if len(param) > 1:
+            v, bs = param[0], param[1:]
+        else:
+            v, bs = param[0], np.zeros(nimg-1)
         if np.ndim(X) == 1:
             X = [X]
         map_args = []
@@ -415,12 +418,12 @@ if __name__ == '__main__':
     else:
         if args.fluxerr > 0.:
             x0 = np.array([750, *np.zeros(nimg-1)])
-            bounds = tuple([[100,5000]] +  [[-2,3] for i in range(nimg-1)])
+            # bounds = tuple([[100,5000]] +  [[-2,3] for i in range(nimg-1)])
         else:
             x0 = [750]
-            bounds = ([10,5000])
+            # bounds = ([[10,5000]])
         log.info('Start the spectral age model fitting (this may take a while)...')
-        mini = minimize(residual_SI_aging_path, x0, bounds=bounds)
+        mini = minimize(residual_SI_aging_path, x0)#, bounds=bounds)
         print(f"Fit chi-sq={mini['fun']}, d.o.f.={np.product(np.shape(X[:,:-1])) + nimg - 1}")
         result = mini['x']
         v = result[0]
