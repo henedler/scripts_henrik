@@ -23,7 +23,6 @@ import lib_fits, lib_aging
 from lib_linearfit import linsq_spidx
 log.root.setLevel(log.INFO)
 
-
 def beam_ellipse(ra, dec, image):
     """
     Return pyregion ellpse regon coresponding to the image beam at ra, dec
@@ -77,9 +76,8 @@ def convert_segment_region_to_lines(file):
                 else:
                     file_o.writelines(line)
 
-def fit_path_to_regions(region, image, z, spacing=1/3600):
+def fit_path_to_regions(region, image, z, spacing='beam'):
     """
-    TODO: This is kinda lost here... Maybe move somewhere else
     Fit a path to a number of ds9 point regions. Then, return points on this path at a certain spacing.
     The region file must be ordered!
 
