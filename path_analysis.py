@@ -427,7 +427,7 @@ if __name__ == '__main__':
         print(f"Fit chi-sq={mini['fun']}, d.o.f.={np.product(np.shape(X[:,:-1])) + nimg - 1}")
         result = mini['x']
         v = result[0]
-        if len(result) > 0:
+        if args.fluxerr > 0:
             bs = result[1:]
         else: bs = np.zeros(nimg-1)
 
