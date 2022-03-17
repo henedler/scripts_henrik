@@ -15,7 +15,7 @@ matplotlib.use('Agg')
 from astropy import units as u
 from astropy.coordinates import Angle
 from scipy import interpolate
-from scipy.optimize import curve_fit, minimize
+from scipy.optimize import curve_fit, minimize, brute
 import pyregion
 import lmfit
 
@@ -384,6 +384,7 @@ if __name__ == '__main__':
         # this is simply the scale of the additive error, 0 +/- 1
         bs_shift = np.tile(bs*shift, (len(X),1)) # shape: (n_pts * n_imgs-1)
         residual = np.sum(((Y + bs_shift - model.reshape((len(X), len(X[0]) - 2)) )/Yerr)**2) + np.sum(bs**2)
+        # print( model.reshape((len(X), len(X[0]) - 2)) , Y, v, residual)
         return residual
 
     # define function to fit the normalizations
@@ -416,14 +417,19 @@ if __name__ == '__main__':
         with open(f'{args.out}-fit-norms.pickle', 'rb') as f:
             norm_results = pickle.load(f)
     else:
+        # Grid search for starting values...
+        log.info('Perform grid search to find suited starting value (range: 500km/s to 2000km/s)')
+        gridsearch = brute(residual_SI_aging_path, [[500,2000]], Ns=7)
+        log.info(f'Best grid point: {gridsearch[0]} km/s')
+
         if args.fluxerr > 0.:
-            x0 = np.array([500, *np.zeros(nimg-1)])
-            # bounds = tuple([[100,5000]] +  [[-2,3] for i in range(nimg-1)])
+            x0 = np.array([gridsearch[0], *np.zeros(nimg-1)])
+            bounds = tuple([[100,5000]] +  [[-2,3] for i in range(nimg-1)])
         else:
-            x0 = [500]
-            # bounds = ([[10,5000]])
+            x0 = gridsearch
+            bounds = ([[100,3000]])
         log.info('Start the spectral age model fitting (this may take a while)...')
-        mini = minimize(residual_SI_aging_path, x0)#, bounds=bounds)
+        mini = minimize(residual_SI_aging_path, x0, bounds=bounds)
         print(f"Fit chi-sq={mini['fun']}, d.o.f.={np.product(np.shape(X[:,:-1])) + nimg - 1}")
         result = mini['x']
         v = result[0]
