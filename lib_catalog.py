@@ -211,7 +211,7 @@ class Cat():
             else:
                 matched &= self[key]
         print(f'Found {np.sum(matched)} common matches')
-        return Cat(self[matched], self.catname)
+        return Cat(self.cat[matched], self.catname)
 
     def write(self, path, overwrite=False, format=None):
         """

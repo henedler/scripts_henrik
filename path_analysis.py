@@ -327,7 +327,7 @@ if __name__ == '__main__':
     ####################################################################################################################
     # do the fitting
     S = lib_aging.S_model(epsrel=1.5e-2)
-    B_min = 3.25e-10 * (1+args.z)**2 * 3**-0.5 # This is B_eq (syn_loss == IC loss) / sqrt(3)
+    B_min = 3.18e-10 * (1+args.z)**2 * 3**-0.5 # This is B_eq (syn_loss == IC loss) / sqrt(3)
     log.info(f"Using minimum loss magnetic field B={B_min:.4e}T")
 
     kmpers_to_kpc_per_Myr = float((u.Myr / u.s * u.km / u.kpc).decompose().to_string())
@@ -371,6 +371,7 @@ if __name__ == '__main__':
         if np.ndim(X) == 1:
             X = [X]
         map_args = []
+        print(param,X)
         for id_d, d in enumerate(X[:, 0]):
             for id_nu in range(len(X[0]) - 2):
                 id_nu += 1
@@ -384,7 +385,7 @@ if __name__ == '__main__':
         # this is simply the scale of the additive error, 0 +/- 1
         bs_shift = np.tile(bs*shift, (len(X),1)) # shape: (n_pts * n_imgs-1)
         residual = np.sum(((Y + bs_shift - model.reshape((len(X), len(X[0]) - 2)) )/Yerr)**2) + np.sum(bs**2)
-        # print( model.reshape((len(X), len(X[0]) - 2)) , Y, v, residual)
+        print( model.reshape((len(X), len(X[0]) - 2)) , Y, v, residual)
         return residual
 
     # define function to fit the normalizations
@@ -419,14 +420,15 @@ if __name__ == '__main__':
     else:
         # Grid search for starting values...
         log.info('Perform grid search to find suited starting value (range: 500km/s to 2000km/s)')
-        gridsearch = brute(residual_SI_aging_path, [[500,2000]], Ns=7)
+        gridsearch = brute(residual_SI_aging_path, [[500,2000]], Ns=7, full_output=True)
         log.info(f'Best grid point: {gridsearch[0]} km/s')
+        print(5555,gridsearch[0])
 
         if args.fluxerr > 0.:
-            x0 = np.array([gridsearch[0], *np.zeros(nimg-1)])
+            x0 = np.array([gridsearch[0][0], *np.zeros(nimg-1)])
             bounds = tuple([[100,5000]] +  [[-2,3] for i in range(nimg-1)])
         else:
-            x0 = gridsearch
+            x0 = gridsearch[0]
             bounds = ([[100,3000]])
         log.info('Start the spectral age model fitting (this may take a while)...')
         mini = minimize(residual_SI_aging_path, x0, bounds=bounds)
