@@ -19,6 +19,7 @@ import logging
 from astropy.table import Table, QTable, Column
 from astropy.wcs import WCS
 import astropy.units as u
+from astropy.units import UnitConversionError
 from astropy.coordinates import SkyCoord
 
 log = logging.getLogger('libcat.logger')
@@ -39,20 +40,36 @@ class Cat():
             raise TypeError(f"cat must be a filename or astropy Table, not {type(cat)}")
         # fix column names and units
         if ra:
-            cat['RA'] = cat[ra].to('degree')
+            try:
+                cat['RA'] = cat[ra].to('degree')
+            except UnitConversionError:
+                print('No unit in RA input - assume deg.')
+                cat['RA'] = cat[ra]*u.deg
         else:
             for racol in ['RA', 'RAJ2000', 'RA_J2000']:
                 try:
-                    cat['RA'] = cat[racol].to('degree')
+                    try:
+                        cat['RA'] = cat[racol].to('degree')
+                    except UnitConversionError:
+                        cat['RA'] = cat[racol]*u.deg
+                    print('No unit in RA input - assume deg.')
                     break
                 except KeyError:
                     pass
         if dec:
-            cat['DEC'] = cat[dec].to('degree')
+            try:
+                cat['DEC'] = cat[dec].to('degree')
+            except UnitConversionError:
+                print('No unit in DEC input - assume deg.')
+                cat['DEC'] = cat[dec]*u.deg
         else:
             for decol in ['DEC', 'DECJ2000', 'DEJ2000', 'DE_J2000', 'DEC_J2000']:
                 try:
-                    cat['DEC'] = cat[decol].to('degree')
+                    try:
+                        cat['DEC'] = cat[decol].to('degree')
+                    except UnitConversionError:
+                        print('No unit in DEC input - assume deg.')
+                        cat['DEC'] = cat[decol]*u.deg
                     break
                 except KeyError:
                     pass
@@ -326,7 +343,7 @@ class RadioCat(Cat):
         n_match: int, number of matches
         """
         if isinstance(cat2, RadioCat):
-            cols = np.unique(['Total_flux', 'E_Total_flux', 'Peak_flux', 'E_Peak_flux'].append(cols))
+            cols = list(np.unique(['Total_flux', 'E_Total_flux', 'Peak_flux', 'E_Peak_flux'] + cols))
         return Cat.match(self, cat2, radius, cols=cols, **kwargs)
 
     def print_ratios(self, labels):

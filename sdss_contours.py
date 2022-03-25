@@ -12,9 +12,11 @@ import numpy as np
 from astropy.coordinates import SkyCoord
 import scipy.ndimage
 from astropy.nddata import Cutout2D
+from astropy.io import fits
 from astropy.wcs import WCS
 from astroquery.hips2fits import hips2fits
 from reproject import reproject_exact
+import legacystamps
 
 from astropy.visualization import (SqrtStretch, PercentileInterval,
                                    LinearStretch, LogStretch,
@@ -80,7 +82,7 @@ parser.add_argument('--no_axes', default=False, action='store_true', help='Show 
 parser.add_argument('--noisemap', type=str, help='Noise map in mJy/beam.')
 parser.add_argument('--skip', action='store_true', help='Skip existing plots?')
 parser.add_argument('--arrow', action='store_true',help='If set to true, point arrow to m87 (e.g. cluster center)')
-parser.add_argument('--window', type=str, default='optical', help='optical (default) / IR / UV ')
+parser.add_argument('--window', type=str, default='optical', help='optical (default) / IR / UV / legacy ')
 parser.add_argument('--transparent', default=False, action='store_true', help='Transparent background (png).')
 parser.add_argument('-o', '--outfile', default=None, help='prefix of output image')
 
@@ -141,14 +143,21 @@ sample_data = scipy.ndimage.filters.gaussian_filter(sample_data, factor/3)
 
 # get background image from hips
 uwcs = WCS(uhdr)
-image = get_overlay_image(coord, size=[uhdr['NAXIS1'], uhdr['NAXIS2']], wcs=uwcs, window=args.window)
+if args.window == 'legacy':
+    fname = legacystamps.download(coord.ra.deg, coord.dec.deg, bands='grz', mode='jpeg', size=size.to_value('deg'),
+                          pixscale=np.abs(3600 * header['CDELT1'] / factor), autoscale=True, )
+    image = plt.imread(fname)
+    image = image[::-1]
+    os.system(f"rm {fname}")
+else:
+    image = get_overlay_image(coord, size=[uhdr['NAXIS1'], uhdr['NAXIS2']], wcs=uwcs, window=args.window)
 
 # Plot image with e.g. matplotlib
 fig = plt.figure(figsize=(10,10))
 ax = fig.add_subplot(1, 1, 1, projection=uwcs, slices=('x', 'y'))
 lon = ax.coords['ra']
 lat = ax.coords['dec']
-ax.imshow(image, origin="lower", cmap="gray", interpolation='kaiser')
+ax.imshow(image, origin="lower", interpolation='kaiser')
 contour_limits = 3 * 2 ** np.arange(20) * noise
 vmin, vmax = contour_limits[0], np.nanmax(sample_data)
 norm = ImageNormalize(sample_data, vmin=vmin, vmax=vmax, stretch=SqrtStretch())
