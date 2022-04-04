@@ -6,7 +6,7 @@ import argparse
 import logging
 from lib_fits import flatten, Image
 from astropy.io import fits
-
+import regions
 import matplotlib
 matplotlib.use('Agg') # aplpy api suggestion
 import matplotlib.pyplot as plt
@@ -74,7 +74,6 @@ show_axes = not args.no_axes
 show_contours = args.show_contours
 contout_base_sigma = 3 # will be this times [1,2,4,8,16]
 n_contour = 9
-
 
 logging.info('Setting up...')
 if plottype != 'stokes':
@@ -226,6 +225,7 @@ if show_scalebar:
     addScalebar(ax, wcs, z, kpc, fontsize, color=accentcolor)
 
 # regions
+regions.Regions.read('all.reg')
 if regions is not None:
     if isinstance(regions, str):
         regions = [regions]

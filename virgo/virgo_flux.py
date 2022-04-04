@@ -4,6 +4,7 @@ import regions
 import scipy.stats
 from astropy.io import fits
 from astropy import wcs
+import astropy.units as u
 import numpy as np
 import sys
 import pandas as pd
@@ -202,7 +203,6 @@ class radiomap:
         if self.prhd.get(keyname,None) is not None:
             self.prhd.remove(keyname)
 
-                
 class applyregion:
     """ apply a region from pyregion to a radiomap """
     def __init__(self,rm,region,offsource=None,robustrms=3):
@@ -331,9 +331,22 @@ def radioflux(file,bgfile,fgr,bgr=None,individual=False,action='Flux',fluxerr=0,
         fg_ir_split_pix =  fg_ir_split.to_pixel(wcs=rm.wcs)
         gf_area_asecsq = fg_ir_split_pix.area*np.abs(rm.wcs.wcs.cdelt[0]*rm.wcs.wcs.cdelt[1])*3600**2
         fg_apply = applyregion(rm, fg_ir_split_pix, offsource=bg_apply.rms)
-        measurement.append([fg_ir_split.meta["text"], fg_apply.flux[0], fg_apply.error[0], fg_apply.max[0], bg_apply.rms[0], gf_area_asecsq])
+        if isinstance(fg_ir_split, regions.EllipseSkyRegion):
+            lls = np.max([fg_ir_split.height.to_value('arcmin'), fg_ir_split.width.to_value('arcmin')])
+            reg_type = 'e'
+        elif isinstance(fg_ir_split, regions.PolygonSkyRegion):
+            vert = fg_ir_split.vertices
+            lls = 0
+            for v in vert:
+                sep = np.max(v.separation(vert).to_value('arcmin'))
+                if sep > lls:
+                    lls = sep
+            reg_type = 'p'
+        else:
+            raise TypeError(f'region should be Ellipse or Polygon, not {type(fg_ir_split)}.')
+        measurement.append([fg_ir_split.meta["text"], fg_apply.flux[0], fg_apply.error[0], fg_apply.max[0], bg_apply.rms[0], gf_area_asecsq, reg_type, lls])
 
-    df = pd.DataFrame(measurement, columns=['Name', 'Total_flux', 'E_stat_Total_flux', 'Peak_flux', 'E_stat_Peak_flux', 'Area'])
+    df = pd.DataFrame(measurement, columns=['Name', 'Total_flux', 'E_stat_Total_flux', 'Peak_flux', 'E_stat_Peak_flux', 'Area', 'Region', 'LLS'])
     df.to_csv(output)
 
 if __name__ == "__main__":
