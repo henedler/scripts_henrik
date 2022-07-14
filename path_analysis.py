@@ -245,13 +245,14 @@ if __name__ == '__main__':
     parser.add_argument('--iidx', default = 0.65, type=float, help='Injection index.')
     parser.add_argument('--injection-offset', default = 0.0, type=float, help='Offset of injection point from beginning of path in kpc.')
     parser.add_argument('--max-fit-length', default = np.inf, type=float,  help='Distance from the first region until which data points should be taken into account for the fitting in kpc.')
-    parser.add_argument('--fluxerr', default = 0.0, type=float, help='Flux scale error of all images. Provide a fraction, e.g. 0.1 for a 10%% error. If set to a value greater zero, the flux scale uncertainty will be included in the fit as systematic offset! Make sure this is what you want to do.')
+    parser.add_argument('--fluxerr', default = 0.0, type=float, help='Flux scale error of all images. Provide a fraction, e.g. 0.1 for a 10%% error. If set to a value greater zero, the flux scale uncertainty will be included in the fit as systematic offset! Make sure this is what you want to do. Otherwise, specify --ignore_flux_corr.')
+    parser.add_argument('--ignore_fluxerr_corr', action='store_true', help='Ignore the correlation of the flux scale uncertainties.')
     parser.add_argument('-o', '--out', default='path_analysis', type=str, help='Name of the output image and csv file.')
     parser.add_argument('--align', action='store_true', help='Align the images.')
     parser.add_argument('--reuse-shift', action='store_true', help='Resue catalogue shifted images if available.')
     parser.add_argument('--reuse-regrid', action='store_true', help='Resue regrid images if availalbe.')
     parser.add_argument('--reuse-df', action='store_true', help='Resue data frame if availalbe.')
-    parser.add_argument('--reuse-fit', action='store_true', help='Resue fit results if availalbe.')
+    parser.add_argument('--reuse-fit', action='store_true', help='Reuse fit results if availalbe.')
     args = parser.parse_args()
 
     stokesi = []
@@ -326,8 +327,8 @@ if __name__ == '__main__':
 
     ####################################################################################################################
     # do the fitting
-    S = lib_aging.S_model(epsrel=1.5e-2)
-    B_min = 3.18e-10 * (1+args.z)**2 * 3**-0.5 # This is B_eq (syn_loss == IC loss) / sqrt(3)
+    S = lib_aging.S_model(epsrel=1e-4) #1.5e-2)
+    B_min = 3.18e-10 * (1+args.z)**2 * 3**-0.5 # This is B_eq  / sqrt(3)
     log.info(f"Using minimum loss magnetic field B={B_min:.4e}T")
 
     kmpers_to_kpc_per_Myr = float((u.Myr / u.s * u.km / u.kpc).decompose().to_string())
@@ -342,6 +343,8 @@ if __name__ == '__main__':
     # construct Y values as arrays
     Y = df[[f'SI_{pair}' for pair in si_pairs]][l_sel].to_numpy()
     Yerr = df[[f'SI_err_{pair}' for pair in si_pairs]][l_sel].to_numpy()
+    if args.ignore_fluxerr_corr: # if not fitting flux scale error
+        Yerr = np.sqrt(Yerr**2 + (args.fluxerr*Y)**2)
     Yul = df[[f'SI_ul_{pair}' for pair in si_pairs]][l_sel].to_numpy()
     Yll = df[[f'SI_ll_{pair}' for pair in si_pairs]][l_sel].to_numpy()
     # set data to NaN where we have UL, LL for fit.
@@ -349,7 +352,7 @@ if __name__ == '__main__':
     Yerr[np.logical_or(Yul, Yll)] = np.nan
 
     # define function for fit -> give spectral index at location and frequency depending on B field and velocity (age)
-    def residual_SI_aging_path(param):
+    def residual_SI_aging_path(param, ignore_fluxerr_corr=False):
         """
         Function for fitting the flux density along a path (e.g. a RG tail).
         Uses from above:
@@ -358,20 +361,20 @@ if __name__ == '__main__':
         Parameters
         ----------
         p: object, input parameters [v, b1, ..., bn-1] where v velocity in km/s and bi are the relative errors in the flux scales - b1 = s1/s2 etc.
+        ignore_fluxerr_corr: bool, whether to take into account correlation of flux scale uncert. by fitting them (default) or to ignore the correlation.
 
         Returns
         -------
         merit: float, residual cost function, weighted by (Y/Yerr)**2
         """
         global X, Y, Yerr
-        if len(param) > 1:
+        if len(param) > 1 and not ignore_fluxerr_corr:
             v, bs = param[0], param[1:]
         else:
             v, bs = param[0], np.zeros(nimg-1)
         if np.ndim(X) == 1:
             X = [X]
         map_args = []
-        print(param,X)
         for id_d, d in enumerate(X[:, 0]):
             for id_nu in range(len(X[0]) - 2):
                 id_nu += 1
@@ -385,30 +388,9 @@ if __name__ == '__main__':
         # this is simply the scale of the additive error, 0 +/- 1
         bs_shift = np.tile(bs*shift, (len(X),1)) # shape: (n_pts * n_imgs-1)
         residual = np.sum(((Y + bs_shift - model.reshape((len(X), len(X[0]) - 2)) )/Yerr)**2) + np.sum(bs**2)
-        print( model.reshape((len(X), len(X[0]) - 2)) , Y, v, residual)
+        print(param, residual)
         return residual
 
-    # define function to fit the normalizations
-    def fit_N0(x, N0):
-        """
-        Model function to fit normalizations after deriving everything else from the SI fit.
-        Parameters
-        ----------
-        x: array_like, shape(len(nu), 5); independent vars like [[nu_0, B, iidx, t, z], [nu_1, B, iidx, t, z], ...]
-        N0: float, dependent variable - Normalization to fit
-
-        Returns
-        -------
-        y: array_like, shape len(nu),
-        """
-        # map_args = np.array([[*x_i, N0] for x_i in x])
-        # res =  np.array(list(p.starmap(S.evaluate, map_args)))
-        res = np.empty(len(x))
-        for i, x in enumerate(x):
-            res[i] = S.evaluate(*x, N0)
-        return res
-
-    S_model = lmfit.Model(fit_N0)
     if args.reuse_fit and os.path.exists(f'{args.out}-fit.pickle') and os.path.exists(f'{args.out}-fit-norms.pickle'):
         # reuse fit results for SI-fit and for normalization fit
         log.info('Reuse fit results.')
@@ -420,24 +402,27 @@ if __name__ == '__main__':
     else:
         # Grid search for starting values...
         log.info('Perform grid search to find suited starting value (range: 500km/s to 2000km/s)')
-        gridsearch = brute(residual_SI_aging_path, [[500,2000]], Ns=7, full_output=True)
+        gridsearch = brute(residual_SI_aging_path, [[500,2000]], Ns=6, full_output=True, finish=None)
         log.info(f'Best grid point: {gridsearch[0]} km/s')
-        print(5555,gridsearch[0])
 
-        if args.fluxerr > 0.:
+        if args.fluxerr > 0. and not args.ignore_fluxerr_corr: # take into account that the fluxscale uncertainties of each image are correlated by fitting them explicitly
             x0 = np.array([gridsearch[0][0], *np.zeros(nimg-1)])
-            bounds = tuple([[100,5000]] +  [[-2,3] for i in range(nimg-1)])
-        else:
+            bounds = tuple([[10,20000]] +  [[-2,3] for i in range(nimg-1)])
+        else: # here either no fluxscale uncertainties or they are assumed to be uncorrelated.
             x0 = gridsearch[0]
-            bounds = ([[100,3000]])
+            bounds = ([[10,20000]])
         log.info('Start the spectral age model fitting (this may take a while)...')
-        mini = minimize(residual_SI_aging_path, x0, bounds=bounds)
-        print(f"Fit chi-sq={mini['fun']}, d.o.f.={np.product(np.shape(X[:,:-1])) + nimg - 1}")
+        mini = minimize(residual_SI_aging_path, x0, args=(args.ignore_fluxerr_corr), bounds=bounds)
+        dof = np.product(np.shape(X[:,:-1])) # degrees of freedom
+        if args.fluxerr > 0 and not args.ignore_fluxerr_corr: # if fitting flux scale uncertainty, this is also degree of freedom.
+            dof += nimg - 1
+        print(f"Fit chi-sq={mini['fun']}, d.o.f.={dof}")
         result = mini['x']
         v = result[0]
-        if args.fluxerr > 0:
+        if args.fluxerr > 0 and not args.ignore_fluxerr_corr:
             bs = result[1:]
-        else: bs = np.zeros(nimg-1)
+        else:
+            bs = np.zeros(nimg-1)
 
         # mini = lmfit.Minimizer(residual_SI_aging_path, params, nan_policy='propagate', reduce_fcn=red_fct) # identity function to allow Minimizer to accept scalar return
         # first solve with grid search
@@ -465,11 +450,36 @@ if __name__ == '__main__':
             pickle.dump([v, bs], f)
 
     si_offsets = np.array([np.log(1 + np.sqrt(2)*args.fluxerr) / np.log(nus[i]/nus[i+1]) for i in range(nimg-1)]) # for a 1 sigma change of systematic
+    if args.ignore_fluxerr_corr:
+        log.info(f"Fit results: v={v:.5f} km/s")
+    else:
+        log.info(f"Fit results: v={v:.5f} km/s:{np.array(bs)*si_offsets} ({bs} sigma)")
 
-    log.info(f"Fit results: v={v:.5f} km/s, SI offsets:{np.array(bs)*si_offsets} ({bs} sigma)")
+    ## now fit normalization (in log space)
+    # define function to fit the normalizations
+    def fit_N0(x, N0):
+        """
+        Model function to fit normalizations after deriving everything else from the SI fit.
+        Fitting in log10-space!
+        Parameters
+        ----------
+        x: array_like, shape(len(nu), 5); independent vars like [[nu_0, B, iidx, t, z], [nu_1, B, iidx, t, z], ...]
+        N0: float, dependent variable - Normalization to fit
 
-    # # now fit normalization
+        Returns
+        -------
+        y: array_like, shape len(nu),
+        """
+        # map_args = np.array([[*x_i, N0] for x_i in x])
+        # res =  np.array(list(p.starmap(S.evaluate, map_args)))
+        res = np.empty(len(x))
+        for i, x in enumerate(x):
+            res[i] = np.log10(S.evaluate(*x, N0))
+        return res
+
+    S_model = lmfit.Model(fit_N0)
     params = S_model.make_params(N0=1.5e21) # initial guess
+
     norm_results = []
     for i, row in df.iterrows():
         if not l_sel[i]: continue # only fit normalization where we also fitted the SI
@@ -477,12 +487,14 @@ if __name__ == '__main__':
         # print(row[[f'F_{im.mhz}' for im in all_images]])
         y = row[[f'F_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
         yerr = row[[f'F_err_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
-        norm_results.append(S_model.fit(y, params, x=x, weights=(y/yerr)**2))
+        if args.ignore_fluxerr_corr:
+            yerr = np.sqrt(yerr**2 + (args.fluxerr*y)**2)
+        sigma_logy = np.abs(yerr/y)
+        norm_results.append(S_model.fit(np.log10(y), params, x=x, weights=sigma_logy**-2))  # For non-log fit: (y/yerr)**2)
     print('Normalization factors: ', [norm_result.params['N0'] for norm_result in norm_results])
     # save to pickle
     with open(f'{args.out}-fit-norms.pickle', 'wb') as f:
         pickle.dump(norm_results, f)
-
 
     B =  B_min # result.best_values['B']
     velocity = v*kmpers_to_kpc_per_Myr #result.params['v']
@@ -513,7 +525,7 @@ if __name__ == '__main__':
         for i, (l_i, norm_result) in enumerate(zip(df['l'].values[l_sel], norm_results)):
             df.loc[np.argwhere(l_sel)[i], f'F_model_{im.mhz}'] = S.evaluate(im.freq, B, args.iidx, l_i / velocity, args.z, norm_result.params['N0'])
             # df.loc[np.argwhere(l_sel)[i], f'F_model_hi_{im.mhz}'] = S.evaluate(im.freq, B, args.iidx, (l_i - results[2]) / velocity, args.z, N0_i)
-        # TODO fit error
+        # TODO plot fit uncertainty band
         # scale data to 144MHz using injectindex
         scale = (144e6/im.freq)**(-args.iidx)
         # plot best-fitting model - only where we fitted the model since there we have a value for the normalization TODO plot errors
@@ -527,24 +539,23 @@ if __name__ == '__main__':
 
     # if args.velocity
     times = np.linspace(0,df['l'].values[-1]/velocity,10) #8
+
+    ax[0].set_xlim([0,df['l'].max()])
+    ax[0].set_yscale('log')
+    ax[0].set_ylim(top=1.e-1, bottom=2.e-4)
+    ax[0].yaxis.set_tick_params(right='on', labelright=False, which='both')
     ax0_top = ax[0].twiny()
-    ax0_top.set_xticks(velocity*times)
-    ax0_top.set_xticklabels(times)
+    ax0_top.set_xlim([0,df['l'].values[-1]/velocity])
+    # ax0_top.set_xticks(velocity*times)
+    # ax0_top.set_xticklabels(times)
     ax0_top.xaxis.set_major_formatter(FormatStrFormatter('%.i'))
     ax0_top.set_xlabel('age [Myr]')
-    ax0_top.xaxis.set_tick_params(bottom='off', labelbottom=False)
-    ax0_top.set_xlim([0,df['l'].max()])
+    ax0_top.xaxis.set_tick_params(bottom='off', top='on', labeltop=True, direction='out', labelbottom=False)
 
-    ax[0].xaxis.set_tick_params(bottom='on',  labeltop=False, labelbottom=False, direction='in')
-    ax[0].set_yscale('log')
-    ax[0].yaxis.set_tick_params(right='on', labelright=False, which='both')
+    ax[0].xaxis.set_tick_params(bottom='on', top='off',  labeltop=False, labelbottom=False, direction='in')
     ax[0].legend(loc='best', fontsize=fs, ncol=2)
-    ax[0].set_xlim([0,df['l'].max()])
-    ax[0].set_ylim(top=1.e-1, bottom=2.e-4)
 
     ### Do spectral index part
-    si_times = np.linspace(0, df['l'].values[-1]/velocity, 10) #8
-
     si_model = []
     # we copy column F_nuXX -> F_mod_nuXX just to make sure we do not accidentally use the modified flux values!
     for i, (image1, image2) in enumerate(zip(all_images[:-1], all_images[1:])):
@@ -564,11 +575,18 @@ if __name__ == '__main__':
         # ax[1].fill_between(df['l'], si-sierr, si+sierr, color=cs[i+j], alpha=0.3)
 
     ax1_top = ax[1].twiny()
-    ax1_top.set_xticks(velocity*si_times)
-    ax1_top.set_xticklabels(si_times)
-    ax1_top.xaxis.set_tick_params(top='on', labeltop=False, direction='in')
+    # ax1_top.set_xticks(velocity*times)
+    # ax1_top.set_xticklabels(velocity*times)
+    ax1_top.set_xlim([0,df['l'].values[-1]/velocity])
+    ax1_top.xaxis.set_tick_params(top='on', bottom='off', labeltop=False, labelbottom=False, direction='in')
 
+
+    ax[1].set_xlim([0,df['l'].max()])
     ax[1].yaxis.set_tick_params(right='on', labelright=False)
+    # ax[1].set_xticks(velocity*times)
+    # ax[1].set_xticklabels(velocity*times)
+    ax[1].xaxis.set_major_formatter(FormatStrFormatter('%.i'))
+    ax[1].xaxis.set_tick_params(bottom='on',  top='off', labeltop=False, labelbottom=True)
     ax[1].set_xlabel('distance [kpc]')
     ax[1].set_ylabel('spectral index')
     ax[1].set_ylim(top=-0.5, bottom=-4.5)
