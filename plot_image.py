@@ -12,6 +12,7 @@ matplotlib.use('Agg') # aplpy api suggestion
 import matplotlib.pyplot as plt
 import matplotlib.hatch
 from astropy.wcs import WCS
+import colormaps
 from astropy.table import Table
 from astropy.visualization import (SqrtStretch, PercentileInterval,
                                    LinearStretch, LogStretch,
@@ -24,7 +25,7 @@ parser = argparse.ArgumentParser(description='Basic plotting script for fits ima
 parser.add_argument('image', nargs='+', help='fits image to plot.')
 parser.add_argument('--region', nargs='+', help='ds9 region files to plot (optional).')
 parser.add_argument('--type', default='stokes', help='stokes / si / sierr / si+err / curvature / curverr ')
-parser.add_argument('-c', '--center', nargs=2, type=float, default=[157.945, 35.049], help='Center ra/dec in deg')
+parser.add_argument('-c', '--center', nargs=2, type=float, default=None, help='Center ra/dec in deg') # [157.945, 35.049] A1033
 parser.add_argument('-s', '--size', nargs=2, type=float, default=[7.8, 7.8], help='size in arcmin')
 parser.add_argument('-z', '--redshift', type=float, default=None, help='redshift.')
 parser.add_argument('-n', '--noise', type=float, default=None, help='Hardcode noise level in mJy/beam.')
@@ -38,7 +39,7 @@ parser.add_argument('--show_grid', action='store_true', help='Show grid.')
 parser.add_argument('--no_axes', default=False, action='store_true', help='Show no axes.')
 parser.add_argument('--png', default=False, action='store_true', help='Save as .png (default: pdf).')
 parser.add_argument('--transparent', default=False, action='store_true', help='Transparent background (png).')
-parser.add_argument('--evcc_cz', default=None, type=str, help='Plot EVCC catalogue cz.')
+parser.add_argument('--cat', default=None, type=str, help='Plot catalogue.')
 parser.add_argument('--show_contours', action='store_true', help='Show contours.')
 
 args = parser.parse_args()
@@ -54,11 +55,6 @@ if args.outfile:
 else:
     outfile = args.image[0].replace('fits','pdf')
 
-
-# Plot extensions
-center = args.center
-size = args.size
-
 # stretch type (only stokes) 'log' (for extended) or 'sqrt' (for compact)
 stretch_type = args.stretch
 # Style
@@ -68,6 +64,9 @@ show_scalebar = not args.no_sbar
 if show_scalebar:
     z = args.redshift
 kpc = args.sbar_kpc # how many kpc is the scalebar?
+accentcolor = 'white' # 'white' if args.type == 'stokes' else 'black'
+plt.style.use('dark_background')
+
 show_cbar = not args.no_cbar
 show_grid = args.show_grid
 show_axes = not args.no_axes
@@ -84,6 +83,17 @@ else:
     header, data = flatten(filename)
 
 img = Image(filename)
+
+# Plot extensions
+if args.center is None:
+    center = [img.ra, img.dec]
+else:
+    center = args.center
+if args.size is None:
+    size = [np.abs(header['NAXIS1']*header['CDELT1'])*60,np.abs(header['NAXIS2']*header['CDELT2'])*60]
+else:
+    size = args.size
+
 if plottype in ['stokes']:
     data *= 1e3 # to mJy
     if args.noise:
@@ -189,7 +199,10 @@ elif plottype == 'curvature':
 elif plottype == 'curverr':
     im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='RdPu', norm=norm)
 else:
-    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='YlOrRed', norm=norm)
+    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='Greys_r', norm=norm)
+    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='Oranges_r', norm=norm)
+    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='uhh_b', norm=norm)
+    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='YlOrRd', norm=norm)
     im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='cubehelix', norm=norm) # Try YlOrRed,
 
 # contours
@@ -200,15 +213,19 @@ if show_contours:
     ax.contour(data, transform=ax.get_transform(WCS(header)), levels=-contour_limits[::-1], colors='grey', alpha=0.7, linestyles='dashed')
 
 # EVCC catalogue
-if args.evcc_cz:
+if args.cat:
     print("Catalogue...")
-    evcc = Table.read(args.evcc_cz)
-    sct = ax.scatter(evcc['RAJ2000'], evcc['DEJ2000'], c=evcc['cz'], marker='o', cmap='Spectral_r', transform=ax.get_transform('world'))
-    sct.set_facecolor('none')
-    plt.colorbar(sct, label='heliocentric radial velocity [km/s]')
+    evcc = Table.read(args.cat)
+    try:
+        cra, cdec = [evcc['RAJ2000'], evcc['DEJ2000']]
+    except KeyError:
+        try:
+            cra, cdec = [evcc['RA'], evcc['DE']]
+        except KeyError:
+            cra, cdec = [evcc['_RAJ2000'], evcc['_DEJ2000']]
+    ax.scatter(cra, cdec, marker='x', c='red', lw=1, transform=ax.get_transform('world'))
 
 # add beam
-accentcolor = 'white' if args.type == 'stokes' else 'black'
 addBeam(ax, header, edgecolor=accentcolor)
 
 logging.info("Refinements...")
@@ -225,7 +242,6 @@ if show_scalebar:
     addScalebar(ax, wcs, z, kpc, fontsize, color=accentcolor)
 
 # regions
-regions.Regions.read('all.reg')
 if regions is not None:
     if isinstance(regions, str):
         regions = [regions]
