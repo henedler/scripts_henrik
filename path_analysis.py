@@ -280,7 +280,7 @@ if __name__ == '__main__':
         all_images.write('convolve-regrid')
 
     for image in all_images:
-        image.calc_noise() # update noise in all images TODO: which is best way? BG region??
+        image.calc_noise() # update noise in all images
 
     if args.reuse_df and os.path.exists(f'{args.out}.csv'):
         log.info('Reuse data frame.')
@@ -294,7 +294,7 @@ if __name__ == '__main__':
         df = pd.concat(df_list, axis=1)
         df = df.reindex(df_list[0].index)
         df = df.loc[:,~df.columns.duplicated()]
-        # calc spectral index from sampleded fluxes.
+        # calc spectral index from sampled fluxes.
         # we copy column F_nuXX -> F_mod_nuXX just to make sure we do not accidentally use the modified flux values!
         for i, image in enumerate(all_images):
             df[f'F_temp_{image.mhz}'] = df[f'F_{image.mhz}'].copy()
@@ -355,6 +355,8 @@ if __name__ == '__main__':
     def residual_SI_aging_path(param, ignore_fluxerr_corr=False):
         """
         Function for fitting the flux density along a path (e.g. a RG tail).
+        https://www.desy.de/~sschmitt/blobel/apltalk.pdf
+        https://www.desy.de/~sschmitt/blobel/apltalk.pdf
         Uses from above:
         X: (n_pt, 1 + n_nu) array. Contains input points, the two cols are [number of points, [distance, nu1, nu2,...nui]].
         B_min: minimum aging mag field
@@ -402,7 +404,7 @@ if __name__ == '__main__':
     else:
         # Grid search for starting values...
         log.info('Perform grid search to find suited starting value (range: 500km/s to 2000km/s)')
-        gridsearch = brute(residual_SI_aging_path, [[500,2000]], Ns=6, full_output=True, finish=None)
+        gridsearch = brute(residual_SI_aging_path, [[500,4000]], Ns=10, full_output=True, finish=None)
         log.info(f'Best grid point: {gridsearch[0]} km/s')
 
         if args.fluxerr > 0. and not args.ignore_fluxerr_corr: # take into account that the fluxscale uncertainties of each image are correlated by fitting them explicitly
@@ -412,7 +414,7 @@ if __name__ == '__main__':
             x0 = gridsearch[0]
             bounds = ([[10,20000]])
         log.info('Start the spectral age model fitting (this may take a while)...')
-        mini = minimize(residual_SI_aging_path, x0, args=(args.ignore_fluxerr_corr), bounds=bounds)
+        mini = minimize(residual_SI_aging_path, x0, args=(args.ignore_fluxerr_corr), bounds=bounds, tol=1e-4) # Test is tol makes sense
         dof = np.product(np.shape(X[:,:-1])) # degrees of freedom
         if args.fluxerr > 0 and not args.ignore_fluxerr_corr: # if fitting flux scale uncertainty, this is also degree of freedom.
             dof += nimg - 1
