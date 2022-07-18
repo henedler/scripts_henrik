@@ -408,16 +408,19 @@ if __name__ == '__main__':
         log.info(f'Best grid point: {gridsearch[0]} km/s')
 
         if args.fluxerr > 0. and not args.ignore_fluxerr_corr: # take into account that the fluxscale uncertainties of each image are correlated by fitting them explicitly
-            x0 = np.array([gridsearch[0][0], *np.zeros(nimg-1)])
+            x0 = np.array([gridsearch[0], *np.zeros(nimg-1)])
+            # x0 = np.array([gridsearch[0][0], *np.zeros(nimg-1)])
             bounds = tuple([[10,20000]] +  [[-2,3] for i in range(nimg-1)])
         else: # here either no fluxscale uncertainties or they are assumed to be uncorrelated.
             x0 = gridsearch[0]
             bounds = ([[10,20000]])
         log.info('Start the spectral age model fitting (this may take a while)...')
-        mini = minimize(residual_SI_aging_path, x0, args=(args.ignore_fluxerr_corr), bounds=bounds, tol=1e-4) # Test is tol makes sense
-        dof = np.product(np.shape(X[:,:-1])) # degrees of freedom
+        mini = minimize(residual_SI_aging_path, x0, args=(args.ignore_fluxerr_corr), bounds=bounds) # Test is tol makes sense
+        # mini = minimize(residual_SI_aging_path, x0, args=(args.ignore_fluxerr_corr), method='Nelder-Mead') # Test is tol makes sense
+
+        dof = np.product(np.shape(X[:,:-1])) - 1 # degrees of freedom, number of points minus 1 parameter (velocity)
         if args.fluxerr > 0 and not args.ignore_fluxerr_corr: # if fitting flux scale uncertainty, this is also degree of freedom.
-            dof += nimg - 1
+            dof -= nimg - 1 # (if we also fit the flux-scale uncertainties)
         print(f"Fit chi-sq={mini['fun']}, d.o.f.={dof}")
         result = mini['x']
         v = result[0]
@@ -476,11 +479,15 @@ if __name__ == '__main__':
         # res =  np.array(list(p.starmap(S.evaluate, map_args)))
         res = np.empty(len(x))
         for i, x in enumerate(x):
-            res[i] = np.log10(S.evaluate(*x, N0))
+            seval = S.evaluate(*x, N0)
+            res[i] = np.log10(seval)
+            print(seval)
         return res
 
     S_model = lmfit.Model(fit_N0)
-    params = S_model.make_params(N0=1.5e21) # initial guess
+    S_model.make_params(N0=1.5e21) # initial guess
+    S_model.set_param_hint('N0', min=0.0) # initial guess
+    # params = S_model.param
 
     norm_results = []
     for i, row in df.iterrows():
@@ -492,7 +499,7 @@ if __name__ == '__main__':
         if args.ignore_fluxerr_corr:
             yerr = np.sqrt(yerr**2 + (args.fluxerr*y)**2)
         sigma_logy = np.abs(yerr/y)
-        norm_results.append(S_model.fit(np.log10(y), params, x=x, weights=sigma_logy**-2))  # For non-log fit: (y/yerr)**2)
+        norm_results.append(S_model.fit(np.log10(y), N0=1.5e21, x=x, weights=sigma_logy**-2))  # For non-log fit: (y/yerr)**2)
     print('Normalization factors: ', [norm_result.params['N0'] for norm_result in norm_results])
     # save to pickle
     with open(f'{args.out}-fit-norms.pickle', 'wb') as f:
