@@ -411,7 +411,7 @@ if __name__ == '__main__':
     else:
         # Grid search for starting values...
         log.info('Perform grid search to find suited starting value (range: 500km/s to 2000km/s)')
-        gridsearch = brute(residual_SI_aging_path, [[500,4000]], Ns=10, full_output=True, finish=None)
+        gridsearch = brute(residual_SI_aging_path, [[500,4000]], Ns=20, full_output=True, finish=None)
         log.info(f'Best grid point: {gridsearch[0]} km/s')
 
         if args.fluxerr > 0. and not args.ignore_fluxerr_corr: # take into account that the fluxscale uncertainties of each image are correlated by fitting them explicitly
