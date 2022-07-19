@@ -172,7 +172,7 @@ def get_path_regions(region, image, z, mode, offset=0.0):
     with open(''.join(interp_region_name), 'w') as f:
         f.write(line)
 
-def interpolate_path(region, image, z, offset=0.0):
+def interpolate_path(region, image, z, offset=0.0, fluxerr=0.0):
     """
     Interpolate a path defined by ordered ds9 points and calculate beam-spaced points on this path.
     Slide a psf-sized region along this path and calculate the mean image value along the path.
@@ -231,7 +231,8 @@ def interpolate_path(region, image, z, offset=0.0):
         print(f'flux: {path_data_psf[i]/path_data_error[i]:.2f} sigma')
 
     df[f'F_{image.mhz}'] = path_data_psf
-    df[f'F_err_{image.mhz}'] = path_data_error
+    df[f'F_err_stat_{image.mhz}'] = path_data_error
+    df[f'F_err_{image.mhz}'] = np.sqrt(path_data_error**2 + (path_data_psf*fluxerr)**2) # stat and sys
     return df
 
 if __name__ == '__main__':
@@ -288,7 +289,7 @@ if __name__ == '__main__':
     else:
         df_list = []
         for image in all_images:
-            df_thisimg = interpolate_path(args.region, image, args.z, args.injection_offset)
+            df_thisimg = interpolate_path(args.region, image, args.z, args.injection_offset, args.fluxerr)
             df_list.append(df_thisimg)
 
         df = pd.concat(df_list, axis=1)
@@ -301,23 +302,27 @@ if __name__ == '__main__':
 
         for image1, image2 in zip(all_images[:-1], all_images[1:]):
                 # find masks for lower limits / upper limits / not even a limit
-                is_ll = np.logical_and(df[f'F_{image1.mhz}'] < 3 * df[f'F_err_{image1.mhz}'],
-                                       df[f'F_{image2.mhz}'] > 3 * df[f'F_err_{image2.mhz}'])
-                is_ul = np.logical_and(df[f'F_{image1.mhz}'] > 3 * df[f'F_err_{image1.mhz}'],
-                                       df[f'F_{image2.mhz}'] < 3 * df[f'F_err_{image2.mhz}'])
-                is_none = np.logical_and(df[f'F_{image1.mhz}'] < 3 * df[f'F_err_{image1.mhz}'],
-                                         df[f'F_{image2.mhz}'] < 3 * df[f'F_err_{image2.mhz}'])
+                is_ll = np.logical_and(df[f'F_{image1.mhz}'] < 3 * df[f'F_err_stat_{image1.mhz}'],
+                                       df[f'F_{image2.mhz}'] > 3 * df[f'F_err_stat_{image2.mhz}'])
+                is_ul = np.logical_and(df[f'F_{image1.mhz}'] > 3 * df[f'F_err_stat_{image1.mhz}'],
+                                       df[f'F_{image2.mhz}'] < 3 * df[f'F_err_stat_{image2.mhz}'])
+                is_none = np.logical_and(df[f'F_{image1.mhz}'] < 3 * df[f'F_err_stat_{image1.mhz}'],
+                                         df[f'F_{image2.mhz}'] < 3 * df[f'F_err_stat_{image2.mhz}'])
 
                 # set temp flux to 3 sigma where we have a limit
-                df.loc[is_ll, f'F_temp_{image1.mhz}'] = 3 * df.loc[is_ll, f'F_err_{image1.mhz}']
-                df.loc[is_ul, f'F_temp_{image2.mhz}'] = 3 * df.loc[is_ul, f'F_err_{image2.mhz}']
+                df.loc[is_ll, f'F_temp_{image1.mhz}'] = 3 * df.loc[is_ll, f'F_err_stat_{image1.mhz}']
+                df.loc[is_ul, f'F_temp_{image2.mhz}'] = 3 * df.loc[is_ul, f'F_err_stat_{image2.mhz}']
 
-                si, sierr = linsq_spidx([image1.freq, image2.freq],
+                si, sierr_stat = linsq_spidx([image1.freq, image2.freq],
                                         [df[f'F_temp_{image1.mhz}'], df[f'F_temp_{image2.mhz}']],
-                                        [df[f'F_err_{image1.mhz}'],  df[f'F_err_{image2.mhz}']])
-                si[is_none], sierr[is_none] = np.nan, np.nan
+                                        [df[f'F_err_stat_{image1.mhz}'],  df[f'F_err_stat_{image2.mhz}']])
+                si, sierr = linsq_spidx([image1.freq, image2.freq],
+                                             [df[f'F_temp_{image1.mhz}'], df[f'F_temp_{image2.mhz}']],
+                                             [df[f'F_err_{image1.mhz}'],  df[f'F_err_{image2.mhz}']])
+                si[is_none], sierr[is_none], sierr_stat[is_none] = np.nan, np.nan, np.nan
 
                 df[f'SI_{image1.mhz}-{image2.mhz}'] = si
+                df[f'SI_err_stat_{image1.mhz}-{image2.mhz}'] = sierr_stat
                 df[f'SI_err_{image1.mhz}-{image2.mhz}'] = sierr
                 df[f'SI_ul_{image1.mhz}-{image2.mhz}'] = is_ul
                 df[f'SI_ll_{image1.mhz}-{image2.mhz}'] = is_ll
@@ -342,9 +347,11 @@ if __name__ == '__main__':
     X = np.array([[d_i, *nus] for d_i in df['l'][l_sel]])
     # construct Y values as arrays
     Y = df[[f'SI_{pair}' for pair in si_pairs]][l_sel].to_numpy()
-    Yerr = df[[f'SI_err_{pair}' for pair in si_pairs]][l_sel].to_numpy()
-    if args.ignore_fluxerr_corr: # if not fitting flux scale error
-        Yerr = np.sqrt(Yerr**2 + (args.fluxerr*Y)**2)
+    if args.ignore_fluxerr_corr: # if not fitting flux scale error use full error including statistical and systematic
+        Yerr = df[[f'SI_err_{pair}' for pair in si_pairs]][l_sel].to_numpy()
+    else: # use only statistical uncertainty and not systematic if fitting sys uncertainty
+        Yerr = df[[f'SI_err_stat_{pair}' for pair in si_pairs]][l_sel].to_numpy()
+
     Yul = df[[f'SI_ul_{pair}' for pair in si_pairs]][l_sel].to_numpy()
     Yll = df[[f'SI_ll_{pair}' for pair in si_pairs]][l_sel].to_numpy()
     # set data to NaN where we have UL, LL for fit.
@@ -496,8 +503,6 @@ if __name__ == '__main__':
         # print(row[[f'F_{im.mhz}' for im in all_images]])
         y = row[[f'F_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
         yerr = row[[f'F_err_{im.mhz}' for im in all_images]].to_numpy(dtype=float)
-        if args.ignore_fluxerr_corr:
-            yerr = np.sqrt(yerr**2 + (args.fluxerr*y)**2)
         sigma_logy = np.abs(yerr/y)
         norm_results.append(S_model.fit(np.log10(y), N0=1.5e21, x=x, weights=sigma_logy**-2))  # For non-log fit: (y/yerr)**2)
     print('Normalization factors: ', [norm_result.params['N0'] for norm_result in norm_results])
@@ -540,7 +545,7 @@ if __name__ == '__main__':
         # plot best-fitting model - only where we fitted the model since there we have a value for the normalization TODO plot errors
         ax[0].plot(df['l'][l_sel], df[f'F_model_{im.mhz}'][l_sel]*scale, color=cs[j], label=f'model {im.mhz} MHz', alpha=0.7, linewidth=lw)
         # plot measured fluxes and errors
-        errs = np.sqrt(df[f'F_err_{im.mhz}']**2 + (df[f'F_{im.mhz}']*args.fluxerr)**2) # include systematic error
+        errs = df[f'F_err_{im.mhz}'] # include systematic error
         ax[0].errorbar(df['l'], df[f'F_{im.mhz}']*scale, errs*scale,
                        uplims=df[f'F_{im.mhz}'] < 3*errs, color=cs[j],
                        label=f'{im.mhz} MHz', **ebarconf)
