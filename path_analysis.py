@@ -425,7 +425,7 @@ if __name__ == '__main__':
         mini = minimize(residual_SI_aging_path, x0, args=(args.ignore_fluxerr_corr), bounds=bounds) # Test is tol makes sense
         # mini = minimize(residual_SI_aging_path, x0, args=(args.ignore_fluxerr_corr), method='Nelder-Mead') # Test is tol makes sense
 
-        dof = np.product(np.shape(X[:,:-1])) - 1 # degrees of freedom, number of points minus 1 parameter (velocity)
+        dof = np.product(np.shape(Y)) - 1 # degrees of freedom, number of points minus 1 parameter (velocity)
         if args.fluxerr > 0 and not args.ignore_fluxerr_corr: # if fitting flux scale uncertainty, this is also degree of freedom.
             dof -= nimg - 1 # (if we also fit the flux-scale uncertainties)
         print(f"Fit chi-sq={mini['fun']}, d.o.f.={dof}")
