@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 
 import regions
+import scipy.stats
 from astropy.io import fits
 from astropy import wcs
+import astropy.units as u
 from astropy.table import Table
 import numpy as np
+import sys
 import pandas as pd
+import argparse
 import warnings
 from lib_linearfit import *
 
@@ -222,9 +226,9 @@ class applyregion:
         self.mean_error=[]
 
         for i,d in enumerate(rm.d):
-            mask_r=region.to_mask('center')
+            mask_r=region.to_mask()
             pixels=np.sum(mask_r)
-            data = mask_r.get_values(d)
+            data = mask_r.cutout(d) #np.extract(mask_r,d)
             self.rms.append(np.nanstd(data))
             self.max.append(np.max(data[np.logical_not(np.isnan(data))]))
             self.min.append(np.min(data[np.logical_not(np.isnan(data))]))
@@ -319,16 +323,15 @@ def radioflux(file,bgfile,fgr,bgr=None,individual=False,action='Flux',fluxerr=0,
 
     for fg_ir_split in fg_ir:
         matches = 0
-        fg_ir_split_pix =  fg_ir_split.to_pixel(wcs=rm.wcs)
         for bg_ir_split in bg_ir:
             if bg_ir_split.meta['text'] == fg_ir_split.meta['text']:
                 matches += 1
                 bg_apply = applyregion(bgrm,bg_ir_split.to_pixel(wcs=rm.wcs))
-                bg_apply_fgreg = applyregion(bgrm, fg_ir_split_pix)
         if matches == 0:
             raise ValueError(f'Found no bg region corresponding to {fg_ir_split.meta["text"]}')
         elif matches > 1:
                 raise ValueError(f'Found non-unique bg region corresponding to {fg_ir_split.meta["text"]}')
+        fg_ir_split_pix =  fg_ir_split.to_pixel(wcs=rm.wcs)
         gf_area_asecsq = fg_ir_split_pix.area*np.abs(rm.wcs.wcs.cdelt[0]*rm.wcs.wcs.cdelt[1])*3600**2
         fg_apply = applyregion(rm, fg_ir_split_pix, offsource=bg_apply.rms)
         if isinstance(fg_ir_split, regions.EllipseSkyRegion):
@@ -349,14 +352,9 @@ def radioflux(file,bgfile,fgr,bgr=None,individual=False,action='Flux',fluxerr=0,
             src = evcc[evcc['VCC'] == int(name[3:])]
         elif 'NGC' in name:
             src = evcc[evcc['NGC'] == name[3:]]
-        if 'EVCC' in src.keys(): # case in EVCC
-            ra, dec, _evcc, vcc, ngc, MmI, MTyp1, MTyp2, MTypV, umag, gmag, imag, rmag, zmag, rad  = src[['RAJ2000','DEJ2000','EVCC','VCC','NGC','MmI','MTyp1', 'MTyp2', 'MTypV', 'umag', 'gmag', 'imag', 'rmag', 'zmag', 'Rad']].as_array()[0]
-            measurement.append([ra, dec, name, _evcc, vcc, ngc, fg_apply.flux[0], fg_apply.error[0], fg_apply.max[0], bg_apply.rms[0], bg_apply_fgreg.flux[0], gf_area_asecsq, reg_type, lls, MmI, MTyp1, MTyp2, MTypV, umag, gmag, imag, rmag, zmag, rad])
-        else: # case in VCC but not EVCC
-            ra, dec, vcc, ngc, MTypV = src[['RAJ2000', 'DEJ2000', 'VCC', 'NGC', 'MTypV']].as_array()[0]
-            measurement.append([ra, dec, name, 0 , vcc, ngc, fg_apply.flux[0], fg_apply.error[0], fg_apply.max[0], bg_apply.rms[0], bg_apply_fgreg.flux[0], gf_area_asecsq, reg_type, lls, 'N', None, None, MTypV, None, None, None, None, None, None])
-
-    df = pd.DataFrame(measurement, columns=['RA','DEC','Name','EVCC','VCC','NGC', 'Total_flux', 'E_stat_Total_flux', 'Peak_flux', 'E_stat_Peak_flux', 'Residual_flux', 'Area', 'Region', 'LLS', 'MmI', 'MTyp1', 'MTyp2', 'MTypV', 'umag', 'gmag', 'imag', 'rmag' ,'zmag', 'Rad'])
+        ra, dec, _evcc, vcc, ngc, MmI, MTyp1 = src[['RAJ2000','DEJ2000','EVCC','VCC','NGC','MmI','MTyp1']].as_array()[0]
+        measurement.append([ra, dec, name, _evcc, vcc, ngc, fg_apply.flux[0], fg_apply.error[0], fg_apply.max[0], bg_apply.rms[0], gf_area_asecsq, reg_type, lls, MmI, MTyp1 ])
+    df = pd.DataFrame(measurement, columns=['RA','DEC','Name','EVCC','VCC','NGC', 'Total_flux', 'E_stat_Total_flux', 'Peak_flux', 'E_stat_Peak_flux', 'Area', 'Region', 'LLS','MmI','MTyp1'])
 
     df.to_csv(output)
 

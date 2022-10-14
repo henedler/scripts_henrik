@@ -62,11 +62,11 @@ def filter_catalog(singlecat,matchedcat,fitsimage,outname,auxcatname,options=Non
         matchedcat = Table.read(matchedcat)
         singlecat = Table.read(singlecat)
 
-        fitsimage = fits.open(fitsimage)
+        fitsimagehdu = fits.open(fitsimage)
 
-        fieldra = fitsimage[0].header['CRVAL1']
-        fielddec = fitsimage[0].header['CRVAL2']
-        fitsimage.close()
+        fieldra = fitsimagehdu[0].header['CRVAL1']
+        fielddec = fitsimagehdu[0].header['CRVAL2']
+        fitsimagehdu.close()
 
         matchedcat=select_isolated_sources(matchedcat,30.0)
         print('%i sources after filtering for isolated sources in LOFAR' % len(matchedcat))
@@ -75,9 +75,10 @@ def filter_catalog(singlecat,matchedcat,fitsimage,outname,auxcatname,options=Non
 
         # print('%i sources after filtering for 3.0 deg from centre' % len(matchedcat))
 
-        matchedcat=matchedcat[matchedcat['DC_Maj']<15.0*u.arcsec] # ERROR!
 
-        print('%i sources after filtering for sources over 12arcsec in LOFAR' % len(matchedcat))
+        maxsize = 25.0 if 'low' in fitsimage else 15.0
+        matchedcat=matchedcat[matchedcat['DC_Maj']<maxsize*u.arcsec] # ERROR!
+        print(f'{len(matchedcat)} sources after filtering for sources over {maxsize:.2f} in LOFAR')
 
         # not implemented yet!
         #tooextendedsources_aux = np.array(np.where(matchedcat[1].data[options['%s_match_majkey2'%auxcatname]] > options['%s_filtersize'%auxcatname])).flatten()
@@ -298,6 +299,7 @@ if __name__=='__main__':
     # Flux scale comparison plots
     if 'NVSS' in o['list']:
         t=Table.read(o['catprefix']+'.cat.fits_NVSS_match_filtered.fits')
+        # t=t[t['Total_flux']>200e-3]
         t=t[t['Total_flux']>30e-3]
         ratios=old_div(t['Total_flux'],t['NVSS_Total_flux'])
         bsratio=np.percentile(bootstrap(ratios,np.median,10000),(16,84))
@@ -310,6 +312,7 @@ if __name__=='__main__':
         nvss_scale=None
     if 'TGSS' in o['list']:
         t=Table.read(o['catprefix']+'.cat.fits_TGSS_match_filtered.fits')
+        # t=t[t['Total_flux']>35e-3]
         ratios=old_div(t['Total_flux'],(old_div(t['TGSS_Total_flux'],o['TGSS_fluxfactor'])))
         bsratio=np.percentile(bootstrap(ratios,np.median,10000),(16,84))
         print('Median LOFAR/TGSS ratio is %.3f (1-sigma %.3f -- %.3f)' % (np.median(ratios),bsratio[0],bsratio[1]))

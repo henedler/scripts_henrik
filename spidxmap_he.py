@@ -105,6 +105,7 @@ if __name__ == '__main__':
         if args.noise:
             if args.sigma is not None:
                 image.calc_noise(sigma=args.sigma, bg_reg=args.bgreg)  # after mask?/convolution
+                print(image.noise)
                 image.blank_noisy(args.sigma)
             else:
                 image.calc_noise() # after mask?/convolution
@@ -182,6 +183,9 @@ if __name__ == '__main__':
 
     spidx = pyfits.PrimaryHDU(spidx_data, regrid_hdr)
     spidx_err = pyfits.PrimaryHDU(spidx_err_data, regrid_hdr)
-    spidx.writeto(args.output, overwrite=True)
-    spidx_err.writeto(args.output.replace('.fits','-err.fits'), overwrite=True)
+    outname = args.output
+    if not outname[-5::] == '.fits':
+        outname += '.fits'
+    spidx.writeto(outname, overwrite=True)
+    spidx_err.writeto(outname.replace('.fits','-err.fits'), overwrite=True)
 

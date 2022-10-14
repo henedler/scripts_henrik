@@ -9,6 +9,7 @@ Created on 2019-08-22 09:37:36
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 
 turbo_colormap_data = np.array(
     [[0.18995, 0.07176, 0.23217],
@@ -296,6 +297,29 @@ plt.register_cmap(name='turbo', data=mpl_data, lut=turbo_colormap_data.shape[0])
 
 mpl_data_r = RGBToPyCmap(turbo_colormap_data[::-1, :])
 plt.register_cmap(name='turbo_r', data=mpl_data_r, lut=turbo_colormap_data.shape[0])
+
+
+def CustomCmap(from_rgb, to_rgb):
+    # from color r,g,b
+    r1, g1, b1 = from_rgb
+    # to color r,g,b
+    r2, g2, b2 = to_rgb
+
+    cdict = {'red': ((0, r1, r1),
+                    (1, r2, r2)),
+            'green': ((0, g1, g1),
+                      (1, g2, g2)),
+            'blue': ((0, b1, b1),
+                     (1, b2, b2))}
+
+    cmap = LinearSegmentedColormap('custom_cmap', cdict)
+    return cmap
+
+uhh_blue = CustomCmap([1.00, 1.00, 1.00], [0.00, 0.744, 1.])  # from white to +/- 5,192,255
+uhh_blue_r = CustomCmap([0.00, 0.744, 1.], [1.00, 1.00, 1.00])  # from white to +/- 5,192,255
+
+plt.register_cmap(name='uhh_b', cmap=uhh_blue)
+plt.register_cmap(name='uhh_b_r', cmap=uhh_blue_r)
 
 if __name__ == '__main__':
     XX, YY = np.meshgrid(np.linspace(0, 1, 100), np.linspace(0, 1, 100))

@@ -1,9 +1,11 @@
-#!/usr/bin/python3
+#!/usr/bin/python
 
 import argparse, os
 import sys
 import logging
 import astropy.units as u
+from astropy.cosmology import FlatLambdaCDM
+import astropy.constants as const
 import matplotlib.pyplot as plt
 import numpy as np
 import regions
@@ -21,12 +23,11 @@ from astropy.visualization import (SqrtStretch, PercentileInterval,
 from lib_plot import addRegion, addCbar, addBeam, addScalebar, setSize
 from lib_fits import flatten
 
-# TODO use frits Legacy survey script
-
 parser = argparse.ArgumentParser(description='Plotting script to overlay fits contours on SDSS image')
 parser.add_argument('target', help='Name of target (Messier, NGC, VCC, IC...). Can also be multiple targets provided like M60+NGC4647.')
 parser.add_argument('-s', '--size', type=float, default=8., help='size in arcmin')
-parser.add_argument('-z', '--redshift', type=float, default=0.0043, help='redshift.')
+# parser.add_argument('-z', '--redshift', type=float, default=None, help='redshift.')
+parser.add_argument('-d', '--distance', type=float, default=17, help='distance in Mpc.')
 parser.add_argument('-u', '--upsample', type=int, default=4, help='Upsample the image by this factor.')
 parser.add_argument('--skip', action='store_true', help='Skip existing plots?')
 parser.add_argument('--transparent', default=False, action='store_true', help='Transparent background (png).')
@@ -35,18 +36,17 @@ parser.add_argument('--rms', nargs=2, help='hardcodede rms high, low', type=floa
 parser.add_argument('-o', '--outfile', default=None, help='prefix of output image')
 
 args = parser.parse_args()
-base = '/beegfs/p1uy068/'
-img =        base+'virgo/mosaics/2022_02/high/mosaic-restored.fits'
-img_res =    base+'virgo/mosaics/2022_02/high/mosaic-residual.fits'
-# img =     base+'virgo/mosaics/2022_02/low/low-mosaic-restored.fits'
-# img_res = base+'virgo/mosaics/2022_02/low/low-mosaic-residual.fits'
-img_lo =     base+'virgo/mosaics/2022_02/low/low-mosaic-restored.fits'
-img_lo_res = base+'virgo/mosaics/2022_02/low/low-mosaic-residual.fits'
+base = '/beegfs/p1uy068/virgo/mosaics/2022_08/'
+
+img =        base+'high/mosaic-restored.fits'
+img_res =    base+'high/mosaic-residual.fits'
 # img = '/Users/henrikedler/virgo/images/mosaic-restored.fits'
 # img_res = '/Users/henrikedler/virgo/images/mosaic-residual.fits'
 # img_lo = '/Users/henrikedler/virgo/images/low-mosaic-restored.fits'
 # img_lo_res = '/Users/henrikedler/virgo/images/low-mosaic-residual.fits'
-regionfile = 'all.reg'
+img_lo = base + 'low/low-mosaic-restored.fits'
+img_lo_res = base + 'low/low-mosaic-residual.fits'
+regionfile = 'all_0608.reg'
 
 # Usage:
 fontsize = 12
@@ -152,9 +152,10 @@ sample_data = scipy.ndimage.filters.gaussian_filter(sample_data, factor/3)
 # get background image from hips
 fname = legacystamps.download(coord.ra.deg, coord.dec.deg, bands='grz', mode='jpeg', size=size.to_value('deg'),
                       pixscale=np.abs(3600 * img_lo_hdr['CDELT1'] / factor), autoscale=True, )
+print(fname)
 image = plt.imread(fname)
 image = image[::-1]
-os.system(f"rm {fname}")
+# os.system(f"rm {fname}")
 
 ax3.imshow(image, origin="lower", interpolation='kaiser')
 contour_limits = 3 * 2 ** np.arange(20) * noise[1]
@@ -190,7 +191,12 @@ else:
 ax3.annotate(f'{sep.to_value("deg"):.2f}'+'$^\circ$', xy=arr_origin,  color='#f64fff',ha=ha, fontsize=fontsize, va=va)
 
 scbarkpc = 10 if size.to_value('arcmin') < 10 else 20
-addScalebar(ax3, uwcs, args.redshift, scbarkpc, fontsize, color='white')
+
+
+cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
+cosmo.luminosity_distance(0.0043)
+redshift = (cosmo.H0*args.distance*u.Mpc/const.c).decompose() # assume ~nearby
+addScalebar(ax3, uwcs, redshift, scbarkpc, fontsize, color='white')
 addBeam(ax1, img_hdr, edgecolor='white')
 addBeam(ax2, img_lo_hdr, edgecolor='white')
 

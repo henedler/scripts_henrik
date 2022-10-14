@@ -107,6 +107,7 @@ def addRegion(regionfile, ax, header, alpha=1.0, color=None, text=True):
         ax.add_patch(p)
     if text:
         for a in artist_list:
+            print(a)
             ax.add_artist(a)
 
 def addCbar(fig, plottype, im, header, int_max, fontsize, cbanchor=[0.127, 0.89, 0.772, 0.02]):
@@ -114,7 +115,8 @@ def addCbar(fig, plottype, im, header, int_max, fontsize, cbanchor=[0.127, 0.89,
     cbar = ColorbarBase(cbaxes, cmap=im.get_cmap(), norm=im.norm, orientation='horizontal',  alpha=1.0) #
     # cbar = fig.colorbar(im, cax=cbaxes, orientation='horizontal', pad=0.35, alpha=1.0)
     if plottype == 'stokes':
-        cbaxes.xaxis.set_label_text(r'Flux density (mJy beam$^{-1}$)', fontsize=fontsize)
+        # cbaxes.xaxis.set_label_text(r'rms noise level [mJy beam$^{-1}$]', fontsize=fontsize)
+        cbaxes.xaxis.set_label_text(r'Surface brightness [mJy beam$^{-1}$]', fontsize=fontsize)
         # log_start, log_stop = -2, np.floor(np.log10(int_max)).astype(int)
         # cbar.set_ticks([0.001,0.005,0.01,0.05,0.1,0.5,1.,5.,10.])
         # cbar.set_ticks(10**(np.linspace(log_start, log_stop+1, log_stop - log_start +2 )))  # horizontal colorbar

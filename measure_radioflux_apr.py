@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 
-import regions
+import scipy.stats
 from astropy.io import fits
 from astropy import wcs
-from astropy.table import Table
 import numpy as np
-import pandas as pd
+import sys
 import warnings
 from lib_linearfit import *
+# HE 2022: adapted the code to work with astropy-affiliated regions -> should produce same results
+import regions
 
 def flatten(f,channel=0,freqaxis=0):
     """ Flatten a fits file so that it becomes a 2D image. Return new header and data """
@@ -200,9 +201,10 @@ class radiomap:
         if self.prhd.get(keyname,None) is not None:
             self.prhd.remove(keyname)
 
+                
 class applyregion:
     """ apply a region from pyregion to a radiomap """
-    def __init__(self,rm,region,offsource=None,robustrms=3):
+    def __init__(self,rm,region,offsource=None,mask=None,robustrms=3):
         """
         provides:
         rms -- the rms in the aperture
@@ -222,9 +224,13 @@ class applyregion:
         self.mean_error=[]
 
         for i,d in enumerate(rm.d):
-            mask_r=region.to_mask('center')
+            else:
+                mask_r=region.to_mask()
+                # data = mask_r.cutout(d) -> does not agree with pyregions so use get_values!
+                data=mask_r.get_values(d, mask=mask)
+
             pixels=np.sum(mask_r)
-            data = mask_r.get_values(d)
+
             self.rms.append(np.nanstd(data))
             self.max.append(np.max(data[np.logical_not(np.isnan(data))]))
             self.min.append(np.min(data[np.logical_not(np.isnan(data))]))
@@ -251,7 +257,7 @@ def printflux(fgss,fluxerr=None):
             for i in range(fg.rm.nchans):
                 freq = fg.rm.frq[i]
                 print(n,fg.rm.filename,'%8.4g %10.6g %10.6g' % (freq,fg.flux[i],fg.error[i]))
- 
+
 def printmean(fgss,fluxerr=None):
     # cycle on region
     for n, fgs in enumerate(fgss):
@@ -286,14 +292,14 @@ def printspidx(fgss,fluxerr=None):
         (a, b, sa, sb) = linear_fit_bootstrap(x=np.log10(freqs), y=np.log10(fluxes), yerr=yerr)
         print(n, '%8.4g %8.4g' % (a, sa))
 
-def radioflux(file,bgfile,fgr,bgr=None,individual=False,action='Flux',fluxerr=0,nsigma=0,verbose=False,output=None, evcc=None):
+
+def radioflux(files,fgr,bgr=None,individual=False,action='Flux',fluxerr=0,nsigma=0,verbose=False):
     """Determine the flux in a region file for a set of files. This is the
     default action for the code called on the command line, but
     may be useful to other code as well.
 
     Keyword arguments:
     files -- list of files (mandatory)
-    bgfiles -- list of background files (mandatory)
     fdr -- foreground region name (mandatory)
     bgr -- background region name (optional)
     individual -- separate region into individual sub-regions
@@ -304,69 +310,63 @@ def radioflux(file,bgfile,fgr,bgr=None,individual=False,action='Flux',fluxerr=0,
     """
     action = {'flux':printflux, 'mean':printmean, 'spidx':printspidx}[action]
 
-    rm = radiomap(file,verbose=verbose)
-    bgrm = radiomap(bgfile,verbose=verbose)
+    if not individual:
+        # TODO
+        raise NotImplementedError('Need to implement non-individual regions for astropy-affiliated regions package.')
 
-    assert rm.d[0].size == bgrm.d[0].size
+    rms = [] # radio maps
+    for filename in files:
+        rms.append(radiomap(filename,verbose=verbose))
+
+    # if using the sigma all the images must have the same size
+    if nsigma > 0: assert all(rms[i].d[0].size == rms[0].d[0].size for i in range(len(rms)))
     # initial mask
-    mask = (np.zeros_like(rm.d) == 0)
+    mask = (np.zeros_like(rms[0].d) == 0)
 
-    measurement = []
-    fg_ir=regions.Regions.read(fgr, format='ds9')
-    bg_ir=regions.Regions.read(bgr, format='ds9')
-    evcc = Table.read(evcc)
-    evcc.convert_bytestring_to_unicode()
-
-    for fg_ir_split in fg_ir:
-        matches = 0
-        fg_ir_split_pix =  fg_ir_split.to_pixel(wcs=rm.wcs)
-        for bg_ir_split in bg_ir:
-            if bg_ir_split.meta['text'] == fg_ir_split.meta['text']:
-                matches += 1
-                bg_apply = applyregion(bgrm,bg_ir_split.to_pixel(wcs=rm.wcs))
-                bg_apply_fgreg = applyregion(bgrm, fg_ir_split_pix)
-        if matches == 0:
-            raise ValueError(f'Found no bg region corresponding to {fg_ir_split.meta["text"]}')
-        elif matches > 1:
-                raise ValueError(f'Found non-unique bg region corresponding to {fg_ir_split.meta["text"]}')
-        gf_area_asecsq = fg_ir_split_pix.area*np.abs(rm.wcs.wcs.cdelt[0]*rm.wcs.wcs.cdelt[1])*3600**2
-        fg_apply = applyregion(rm, fg_ir_split_pix, offsource=bg_apply.rms)
-        if isinstance(fg_ir_split, regions.EllipseSkyRegion):
-            lls = np.max([fg_ir_split.height.to_value('arcmin'), fg_ir_split.width.to_value('arcmin')])
-            reg_type = 'e'
-        elif isinstance(fg_ir_split, regions.PolygonSkyRegion):
-            vert = fg_ir_split.vertices
-            lls = 0
-            for v in vert:
-                sep = np.max(v.separation(vert).to_value('arcmin'))
-                if sep > lls:
-                    lls = sep
-            reg_type = 'p'
+    bgs = [] #1d list: [ radiomap ]
+    for rm in rms:
+        if bgr:
+            raise NotImplementedError('fix bg regions.')
+            bg_ir = regions.Regions.read(bgr, format='ds9')
+            bg_ir = [bg_ir_split.to_pixel(wcs=rm.wcs) for bg_ir_split in bg_ir]
+            bg=applyregion(rm,bg_ir)
+            bgs.append(bg.rms)
+            # likely brakes with channelled images
+            if nsigma > 0: mask = np.logical_and(mask, np.array(rm.d) > (np.array(bg.rms)*nsigma) )
         else:
-            raise TypeError(f'region should be Ellipse or Polygon, not {type(fg_ir_split)}.')
-        name = fg_ir_split.meta["text"]
-        if 'VCC' in name:
-            src = evcc[evcc['VCC'] == int(name[3:])]
-        elif 'NGC' in name:
-            src = evcc[evcc['NGC'] == name[3:]]
-        if 'EVCC' in src.keys(): # case in EVCC
-            ra, dec, _evcc, vcc, ngc, MmI, MTyp1, MTyp2, MTypV, umag, gmag, imag, rmag, zmag, rad  = src[['RAJ2000','DEJ2000','EVCC','VCC','NGC','MmI','MTyp1', 'MTyp2', 'MTypV', 'umag', 'gmag', 'imag', 'rmag', 'zmag', 'Rad']].as_array()[0]
-            measurement.append([ra, dec, name, _evcc, vcc, ngc, fg_apply.flux[0], fg_apply.error[0], fg_apply.max[0], bg_apply.rms[0], bg_apply_fgreg.flux[0], gf_area_asecsq, reg_type, lls, MmI, MTyp1, MTyp2, MTypV, umag, gmag, imag, rmag, zmag, rad])
-        else: # case in VCC but not EVCC
-            ra, dec, vcc, ngc, MTypV = src[['RAJ2000', 'DEJ2000', 'VCC', 'NGC', 'MTypV']].as_array()[0]
-            measurement.append([ra, dec, name, 0 , vcc, ngc, fg_apply.flux[0], fg_apply.error[0], fg_apply.max[0], bg_apply.rms[0], bg_apply_fgreg.flux[0], gf_area_asecsq, reg_type, lls, 'N', None, None, MTypV, None, None, None, None, None, None])
+            bgs.append(None)
 
-    df = pd.DataFrame(measurement, columns=['RA','DEC','Name','EVCC','VCC','NGC', 'Total_flux', 'E_stat_Total_flux', 'Peak_flux', 'E_stat_Peak_flux', 'Residual_flux', 'Area', 'Region', 'LLS', 'MmI', 'MTyp1', 'MTyp2', 'MTypV', 'umag', 'gmag', 'imag', 'rmag' ,'zmag', 'Rad'])
+    fgs = [] # 2d list: [ radiomap x forground_region]
+    for i, rm in enumerate(rms):
+        if use_apregions:
+            fg_ir = regions.Regions.read(fgr, format='ds9')
+            fg_ir = regions.Regions([fg_ir_split.to_pixel(wcs=rm.wcs) for fg_ir_split in fg_ir])
+        else:
+            fg_ir = pyregion.open(fgr).as_imagecoord(rm.headers[0])
+        if individual:
+            fgs.append([])
+            for fg_ir_split in fg_ir:
+                if use_apregions:
+                    fg = fg_ir_split
+                else:
+                    fg = pyregion.ShapeList([fg_ir_split])
+                print(mask)
+                fgs[-1].append(applyregion(rm,fg,offsource=bgs[i],mask=mask))
+        else:
+            fgs.append([applyregion(rm,fg_ir,offsource=bgs[i],mask=mask)])
 
-    df.to_csv(output)
+    # cycle before on regions and than on rm
+    fgs = np.array(fgs).swapaxes(0,1)
+    action(fgs, fluxerr)
 
+        
 if __name__ == "__main__":
     import sys
     import argparse
 
     parser = argparse.ArgumentParser(description='Measure fluxes from FITS files.')
-    parser.add_argument('file', metavar='FILE', help='FITS file to process')
-    parser.add_argument('bgfile', help='BG FITS file to process')
+    parser.add_argument('files', metavar='FILE', nargs='+',
+                        help='FITS files to process')
     parser.add_argument('-f','--foreground', dest='fgr', action='store',default='ds9.reg',help='Foreground region file to use.')
     parser.add_argument('-b','--background', dest='bgr', action='store',default='',help='Background region file to use.')
     parser.add_argument('-i','--individual', dest='indiv', action='store_true',default=False,help='Break composite region file into individual regions.')
@@ -374,9 +374,7 @@ if __name__ == "__main__":
     parser.add_argument('-s','--sigma', dest='nsigma', action='store',default=0, type=float, help='Try to cut all the images above a certain sigma. Only pixel over that sigma in ALL the images are considered. Valid only for spidx.')
     parser.add_argument('-a','--action', dest='action', action='store',default='flux',help='Action to perform: flux, mean, spidx.')
     parser.add_argument('-v','--verbose', dest='verbose', action='store_true',default=False,help='Be verbose.')
-    parser.add_argument('--evcc', default=None)
-    parser.add_argument('-o', '--outname', default='measurement.csv')
 
     args = parser.parse_args()
 
-    radioflux(args.file, args.bgfile, args.fgr,args.bgr,args.indiv,args.action,args.fluxerr,args.nsigma,verbose=args.verbose, output=args.outname, evcc=args.evcc)
+    radioflux(args.files,args.fgr,args.bgr,args.indiv,args.action,args.fluxerr,args.nsigma,verbose=args.verbose)

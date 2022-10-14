@@ -15,6 +15,7 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 import numpy as np
+import copy
 import logging
 from astropy.table import Table, QTable, Column
 from astropy.wcs import WCS
@@ -43,17 +44,17 @@ class Cat():
             try:
                 cat['RA'] = cat[ra].to('degree')
             except UnitConversionError:
-                print('No unit in RA input - assume deg.')
+                log.warning('No unit in RA input - assume deg.')
                 cat['RA'] = cat[ra]*u.deg
         else:
-            for racol in ['RA', 'RAJ2000', 'RA_J2000']:
+            for racol in ['RA', 'RAJ2000', 'RA_J2000', '_RAJ2000']:
                 try:
                     try:
                         cat['RA'] = cat[racol].to('degree')
                     except UnitConversionError:
                         cat['RA'] = cat[racol]*u.deg
-                    print('No unit in RA input - assume deg.')
-                    break
+                        log.warning('No unit in RA input - assume deg.')
+                        break
                 except KeyError:
                     pass
         if dec:
@@ -63,7 +64,7 @@ class Cat():
                 print('No unit in DEC input - assume deg.')
                 cat['DEC'] = cat[dec]*u.deg
         else:
-            for decol in ['DEC', 'DECJ2000', 'DEJ2000', 'DE_J2000', 'DEC_J2000']:
+            for decol in ['DEC', 'DECJ2000', 'DEJ2000', 'DE_J2000', 'DEC_J2000', '_DEJ2000']:
                 try:
                     try:
                         cat['DEC'] = cat[decol].to('degree')
@@ -107,6 +108,9 @@ class Cat():
     def __setitem__(self, key, value):
         self.cat[key] = value
 
+    def copy(self):
+        return copy.deepcopy(self)
+
     def keys(self):
         return self.cat.keys()
 
@@ -148,7 +152,7 @@ class Cat():
         if isolation:
             cat['NN_dist']=np.nan
             for row in cat:
-                dist=3600.0*separation(row['RA'],row['DEC'],cat['RA'],cat['DEC'])
+                dist=3600.0*separation(row['RA']*u.deg,row['DEC']*u.deg,cat['RA'],cat['DEC'])
                 dist.sort()
                 row['NN_dist']=dist[1]
             cat=cat[cat['NN_dist']> isolation]
@@ -243,7 +247,7 @@ class Cat():
 
 class RadioCat(Cat):
     """ Wrapper class to include filtering and cross-matching utilities for astropy tables"""
-    def __init__(self, cat, catname, col_tflux='Total_flux', col_pflux='Peak_flux', col_maj='Maj', ra='RA', dec='DEC', wcs=None, resolution=None, scale=1.0):
+    def __init__(self, cat, catname, col_tflux='Total_flux', col_pflux='Peak_flux', col_maj='Maj', ra=None, dec=None, wcs=None, resolution=None, scale=1.0):
         # super class
         Cat.__init__(self, cat, catname, ra, dec, wcs)
         cat = self.cat
@@ -292,7 +296,7 @@ class RadioCat(Cat):
             cat =  cat[i]
             logstr += f'->rectangle:{len(cat)}'
         if circle: # filter in circle
-            r = separation(circle[0], circle[1], cat['RA'], cat['DEC'])
+            r = separation(circle[0]*u.deg, circle[1]*u.deg, cat['RA'], cat['DEC'])
             cat['center_dist'] = r
             cat = cat[cat['center_dist'] < circle[2]]
             logstr += f'->circle:{len(cat)}'
@@ -306,11 +310,11 @@ class RadioCat(Cat):
             cat = cat[in_beam]
             logstr += f'->ellipse:{len(cat)}'
         if isolation:
-            cat['NN_dist']=np.nan
+            cat['NN_dist']=np.nan*u.deg
             for row in cat:
-                dist=3600.0*separation(row['RA'],row['DEC'],cat['RA'],cat['DEC'])
+                dist=3600.0*separation(row['RA']*u.deg,row['DEC']*u.deg,cat['RA'],cat['DEC'])
                 dist.sort()
-                row['NN_dist']=dist[1]
+                row['NN_dist']=dist[1].to_value('degree')
             cat=cat[cat['NN_dist']> isolation]
             logstr += f'->isolation:{len(cat)}'
         if size:
@@ -342,8 +346,8 @@ class RadioCat(Cat):
         -------
         n_match: int, number of matches
         """
-        if isinstance(cat2, RadioCat):
-            cols = list(np.unique(['Total_flux', 'E_Total_flux', 'Peak_flux', 'E_Peak_flux'] + cols))
+        if type(cat2) == type(self):
+            cols = list(np.unique(['Total_flux', 'E_Total_flux'] + cols))
         return Cat.match(self, cat2, radius, cols=cols, **kwargs)
 
     def print_ratios(self, labels):
