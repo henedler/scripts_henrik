@@ -29,31 +29,41 @@ parser.add_argument('-s', '--size', type=float, default=8., help='size in arcmin
 # parser.add_argument('-z', '--redshift', type=float, default=None, help='redshift.')
 parser.add_argument('-d', '--distance', type=float, default=17, help='distance in Mpc.')
 parser.add_argument('-u', '--upsample', type=int, default=4, help='Upsample the image by this factor.')
+parser.add_argument('--topperc', type=float, default=99.95, help='Top percentage inteval.')
 parser.add_argument('--skip', action='store_true', help='Skip existing plots?')
 parser.add_argument('--transparent', default=False, action='store_true', help='Transparent background (png).')
 parser.add_argument('--fluxes', nargs=4, help='flux high / error high / flux low / error low in mJy', type=float)
+parser.add_argument('--regionfile', type=str )
 parser.add_argument('--rms', nargs=2, help='hardcodede rms high, low', type=float)
-parser.add_argument('-o', '--outfile', default=None, help='prefix of output image')
+parser.add_argument('-t', '--title', default=None, help=' title of output image')
+parser.add_argument('-f', '--filename', default=None, help='filename of output image (use title if not provided)')
+
 
 args = parser.parse_args()
 base = '/beegfs/p1uy068/virgo/mosaics/2022_08/'
 
 img =        base+'high/mosaic-restored.fits'
 img_res =    base+'high/mosaic-residual.fits'
+# img = base + 'low/low-mosaic-restored.fits'
+# img_res = base + 'low/low-mosaic-residual.fits'
 # img = '/Users/henrikedler/virgo/images/mosaic-restored.fits'
 # img_res = '/Users/henrikedler/virgo/images/mosaic-residual.fits'
 # img_lo = '/Users/henrikedler/virgo/images/low-mosaic-restored.fits'
 # img_lo_res = '/Users/henrikedler/virgo/images/low-mosaic-residual.fits'
 img_lo = base + 'low/low-mosaic-restored.fits'
 img_lo_res = base + 'low/low-mosaic-residual.fits'
-regionfile = 'all_0608.reg'
+regionfile = args.regionfile #'all_230111.reg'
 
 # Usage:
 fontsize = 12
 name = args.target  # NGC ... and M.. names definitely work
-titlename = args.target
-if os.path.exists(titlename + '.png') and args.skip:
-    print(f'{titlename}.png exists - exiting.')
+titlename = args.title
+if args.filename:
+    filename = args.filename
+else:
+    filename = titlename
+if os.path.exists(filename + '.png') and args.skip:
+    print(f'{filename}.png exists - exiting.')
     sys.exit(0)
 size = args.size * u.arcmin  # Size of the image in arcmin (so 10'x10')
 
@@ -79,11 +89,13 @@ uhdr = cutout_lo.wcs.to_header()
 uwcs = WCS(uhdr)
 
 fig = plt.figure(figsize=(15,5))
-ax1 = fig.add_subplot(131, projection=in_wcs, slices=('x', 'y'))
-ax2 = fig.add_subplot(132, projection=in_wcs_lo, slices=('x', 'y'))
-ax3 = fig.add_subplot(133, projection=uwcs, slices=('x', 'y'))
+ax1 = fig.add_subplot(131, projection=in_wcs, slices=('x','y'))
+ax2 = fig.add_subplot(132, projection=in_wcs_lo, slices=('x','y'))
+ax3 = fig.add_subplot(133, projection=uwcs, slices=('x','y'))
 
-cbar_kwargs = dict(label=r'$S$ [mJy$\,$beam$^{-1}$]', orientation='horizontal')
+# fix, ax = plt.subplots(1,3, layout='constrained', )
+# plt.rcParams['figure.constrained_layout.use'] = True
+# cbar_kwargs = dict(label=r'$S$ [mJy$\,$beam$^{-1}$]', orientation='vertical')
 
 for data, ax, wcs, hdr in zip([img_data, img_lo_data], [ax1, ax2], [in_wcs, in_wcs_lo], [img_hdr, img_lo_hdr]):
     xrange, yrange = setSize(ax, wcs, coord.ra.deg, coord.dec.deg, size.to_value('deg'),  size.to_value('deg'))
@@ -92,24 +104,33 @@ for data, ax, wcs, hdr in zip([img_data, img_lo_data], [ax1, ax2], [in_wcs, in_w
     data_visible = Cutout2D(data, coord, size=size, wcs=wcs).data
     if data_visible.ndim < 2:
         raise ValueError('Selected coordinates out of image.')
-    interval = AsymmetricPercentileInterval(20, 99.95)  # 99.99)  # 80 - 99.99 percentile
+    interval = AsymmetricPercentileInterval(20, args.topperc)  # 99.99)  # 80 - 99.99 percentile
     stretch = SqrtStretch()
+    stretch = LogStretch()
     int_min, int_max = interval.get_limits(data_visible)
     logging.info('min: {},  max: {}'.format(int_min, int_max))
     norm = ImageNormalize(data, vmin=float(int_min), vmax=float(int_max), stretch=stretch)
-    im = ax.imshow(data, origin="lower", cmap='magma', interpolation='kaiser', norm=norm)
+    im = ax.imshow(data, origin="lower", cmap='magma', interpolation='kaiser', norm=norm, vmin=float(int_min), vmax=float(int_max))
     pixcoord = wcs.wcs_world2pix([[coord.ra.deg, coord.dec.deg]], 0)
     ax.scatter(pixcoord[0][0], pixcoord[0][1], c='grey', marker='x', zorder=5)
+
+    ### option 1: use make_axes_locatable
     # divider = make_axes_locatable(ax)
-    # cax = divider.new_horizontal(size="5%", pad=0.05, pack_start=True)
-    # cax = divider.append_axes("top", size="5%", pad=0.05)
-    # cax.xaxis.set_ticks_position("top")
-    # cax.xaxis.tick_top()
-    # cax.xaxis.set_label_position('top')
-    # cbar = fig.colorbar(im, cax=cax, **cbar_kwargs)
-    # cax.xaxis.set_ticks_position("top")
-    # cax.xaxis.tick_top()
-    # cax.xaxis.set_label_position('top')
+    # cax = divider.append_axes("right", size="5%", pad=0.05)
+    # cbar = fig.colorbar(im, cax=cax, aspect=25, orientation='vertical')
+    # cbar.set_label(r'Surface brightness [mJy beam$^{-1}$]') # loc=left
+    # cax.grid(False)
+    # cax.set_xticks([], [])
+    # cax.get_xaxis().set_visible(False)
+    # cax.xaxis.set_visible(False)
+    # # print(dir(cax.xaxis))
+    # # print(dir(cax))
+
+    # fig.colorbar(im, ax=ax, aspect=25, shrink=0.7, orientation='vertical', label=r'Surface brightness [mJy beam$^{-1}$]')
+
+# divider = make_axes_locatable(ax3)
+# cax = divider.append_axes("right", size="5%", pad=0.05)
+# cax.remove()
 
 if args.rms:
     noise = 1000*np.array(args.rms)
@@ -126,14 +147,16 @@ else:
         print(f"Found background rms: {noise[i]:.3f}mJy/beam.")
 
 ax1.annotate(r'$\sigma_\mathrm{rms}=' + f'{int(1000*noise[0])}' + r'\,\mathrm{\frac{{\mu}Jy}{beam}}$',
-             xy=(0.5,0.05),ha='center', xycoords='axes fraction', fontsize=fontsize, c='white', verticalalignment='bottom')
+             xy=(0.5,0.04),ha='center', xycoords='axes fraction', fontsize=fontsize, c='white', verticalalignment='bottom')
 ax2.annotate(r'$\sigma_\mathrm{rms}=' + f'{int(1000*noise[1])}' + r'\,\mathrm{\frac{{\mu}Jy}{beam}}$',
-            xy = (0.5,0.05),ha='center', xycoords = 'axes fraction', fontsize=fontsize, c='white', verticalalignment = 'bottom')
+            xy = (0.5,0.04),ha='center', xycoords = 'axes fraction', fontsize=fontsize, c='white', verticalalignment = 'bottom')
 
 if args.fluxes:
     ax1.annotate(rf'$S={args.fluxes[0]:.1f}\pm{args.fluxes[1]:.1f}\,$mJy',
                  xy=(0.05, 0.95), ha='left', va='top', xycoords='axes fraction', fontsize=fontsize, c='white')
     ax2.annotate(rf'$S={args.fluxes[2]:.1f}\pm{args.fluxes[3]:.1f}\,$mJy',
+                 xy=(0.05, 0.95), ha='left', va='top', xycoords='axes fraction', fontsize=fontsize, c='white')
+    ax3.annotate(rf'$d={args.distance:.1f}\,$Mpc',
                  xy=(0.05, 0.95), ha='left', va='top', xycoords='axes fraction', fontsize=fontsize, c='white')
 
 # create upsampled wcs
@@ -151,8 +174,7 @@ sample_data = scipy.ndimage.filters.gaussian_filter(sample_data, factor/3)
 
 # get background image from hips
 fname = legacystamps.download(coord.ra.deg, coord.dec.deg, bands='grz', mode='jpeg', size=size.to_value('deg'),
-                      pixscale=np.abs(3600 * img_lo_hdr['CDELT1'] / factor), autoscale=True, )
-print(fname)
+                      pixscale=np.abs(3600 * img_lo_hdr['CDELT1'] / factor), autoscale=True)
 image = plt.imread(fname)
 image = image[::-1]
 # os.system(f"rm {fname}")
@@ -192,10 +214,7 @@ ax3.annotate(f'{sep.to_value("deg"):.2f}'+'$^\circ$', xy=arr_origin,  color='#f6
 
 scbarkpc = 10 if size.to_value('arcmin') < 10 else 20
 
-
-cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
-cosmo.luminosity_distance(0.0043)
-redshift = (cosmo.H0*args.distance*u.Mpc/const.c).decompose() # assume ~nearby
+redshift = (70*args.distance/3e5) # assume ~nearby
 addScalebar(ax3, uwcs, redshift, scbarkpc, fontsize, color='white')
 addBeam(ax1, img_hdr, edgecolor='white')
 addBeam(ax2, img_lo_hdr, edgecolor='white')
@@ -207,26 +226,34 @@ for r_split in regions.Regions.read(regionfile, format='ds9'):
         matches += 1
         this_reg = r_split
 if matches == 0:
-    raise ValueError(f'Found no bg region corresponding to {r_split.meta["text"]}')
+    raise ValueError(f'Found no region corresponding to {r_split.meta["text"]}')
 elif matches > 1:
-    raise ValueError(f'Found non-unique bg region corresponding to {r_split.meta["text"]}')
-this_reg.write(f'temp-{titlename}.reg', format='ds9', overwrite=True)
-addRegion(f'temp-{titlename}.reg', ax2, img_lo_hdr, color='#03fc30', text=False)
-os.system(f'rm -r temp-{titlename}.reg')
+    raise ValueError(f'Found non-unique region corresponding to {r_split.meta["text"]}')
+this_reg.write(f'temp-{filename}.reg', format='ds9', overwrite=True)
+addRegion(f'temp-{filename}.reg', ax2, img_lo_hdr, color='#03fc30', text=False)
+os.system(f'rm -r temp-{filename}.reg')
 
-for ax in [ax1, ax2, ax3]:
+for i, ax in enumerate([ax1, ax2, ax3]):
     # labels
     lon = ax.coords['ra']
     lat = ax.coords['dec']
+    if i == 0:
+        lat.set_axislabel('Declination (J2000)', fontsize=fontsize)
+        lat.set_ticklabel(size=fontsize)
+        lat.set_major_formatter('dd:mm')
+        lat.set_ticklabel(rotation=90)  # to turn dec vertical
+        lat_ticks = lat.parent_axes.get_yticks()
+    else:
+        lat.set_ticklabel_visible(False)
+        # lat.parent_axes.set_yticks(lat_ticks)
+        # lat.set_ticklabel_visible(False)
     lon.set_axislabel('Right Ascension (J2000)', fontsize=fontsize)
-    lat.set_axislabel('Declination (J2000)', fontsize=fontsize)
     lon.set_ticklabel(size=fontsize)
-    lat.set_ticklabel(size=fontsize)
-    # small img
     lon.set_major_formatter('hh:mm:ss')
-    lat.set_major_formatter('dd:mm')
-    lat.set_ticklabel(rotation=90) # to turn dec vertical
 
 # plt.title(f"{titlename}, "+r"$\sigma_{rms}=$"+f"{noise:.3f}mJy/beam", size=fontsize+2)
-fig.suptitle(f"{titlename}", size=fontsize+2)
-plt.savefig(titlename + '.png', bbox_inches='tight', transparent=args.transparent)
+fig.suptitle(f"{titlename.replace('-',' / ')}", size=fontsize+3, y=0.90)
+if args.transparent:
+    plt.savefig(filename + '.png', bbox_inches='tight', transparent=True)
+else:
+    plt.savefig(filename + '.pdf', bbox_inches='tight', transparent=True)

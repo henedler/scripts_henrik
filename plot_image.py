@@ -32,6 +32,7 @@ parser.add_argument('-n', '--noise', type=float, default=None, help='Hardcode no
 parser.add_argument('-o', '--outfile', default=None, help='prefix of output image')
 parser.add_argument('--interval', default=None, nargs=2, type=float, help='Provide min/max interval.')
 parser.add_argument('--no_cbar', default=False, action='store_true', help='Show no cbar.')
+parser.add_argument('--cbar_vertical', default=False, action='store_true', help='Show cbar vertical.')
 parser.add_argument('--no_sbar', default=False, action='store_true', help='Show no scalebar.')
 parser.add_argument('--sbar_kpc', default=100, type=float, help='Show how many kpc of scalebar?.')
 parser.add_argument('--stretch', default='sqrt', type=str, help='Use sqrt for normal, log for very extended.')
@@ -40,6 +41,7 @@ parser.add_argument('--no_axes', default=False, action='store_true', help='Show 
 parser.add_argument('--png', default=False, action='store_true', help='Save as .png (default: pdf).')
 parser.add_argument('--transparent', default=False, action='store_true', help='Transparent background (png).')
 parser.add_argument('--cat', default=None, type=str, help='Plot catalogue.')
+parser.add_argument('--dpi', default=200, type=int)
 parser.add_argument('--show_contours', action='store_true', help='Show contours.')
 
 args = parser.parse_args()
@@ -58,15 +60,15 @@ else:
 # stretch type (only stokes) 'log' (for extended) or 'sqrt' (for compact)
 stretch_type = args.stretch
 # Style
-fontsize = 16
+fontsize = 14
 # Scalebar
 show_scalebar = not args.no_sbar
 if show_scalebar:
     z = args.redshift
 kpc = args.sbar_kpc # how many kpc is the scalebar?
-# accentcolor = 'white' # 'white' if args.type == 'stokes' else 'black'
+accentcolor = 'black'
 # plt.style.use('dark_background')
-accentcolor = 'white' if args.type == 'stokes' else 'black'
+# accentcolor = 'white' if args.type == 'stokes' else 'black'
 
 show_cbar = not args.no_cbar
 show_grid = args.show_grid
@@ -115,7 +117,7 @@ lat = ax.coords['dec']
 print(center, size)
 xrange, yrange = setSize(ax, wcs, center[0], center[1], *np.array(size)/60)
 logging.info('Plotting  {}-{}, {}-{} from {}x{}.'.format(xrange[1], xrange[0], yrange[0], yrange[1], len(data[0]), len(data[:,0])))
-data_visible = data[xrange[1]:xrange[0],yrange[0]:yrange[1]] # select only data that is visible in plot
+data_visible = data[yrange[0]:yrange[1],xrange[1]:xrange[0]] # select only data that is visible in plot
 if data_visible.ndim < 2:
     raise ValueError('Selected coordinates out of image.')
 # if we want to scale SI map transparency with error
@@ -183,8 +185,9 @@ if plottype in ['si','si+err']:
         data_alpha[data_alpha < low_cut] = low_cut
         alpha = 0.7 * (np.nanmin(data_alpha)/data_alpha)**2 + 0.3
         alpha[np.isnan(alpha)] = 0.3
+        print(alpha.shape, data.shape)
         im = ax.imshow(data, alpha=alpha, origin='lower', interpolation='nearest', cmap='turbo', norm=norm)
-    ax.contour(all_limit_mask, levels=[0.5], linewidths=0.5, colors=('black',), antialiased=True)
+        ax.contour(all_limit_mask, levels=[0.5], linewidths=0.5, colors=('black',), antialiased=True)
     # ax.contourf(all_limit_mask, alpha=0.5, color='white', colors=('white',), levels=[-0.5,0.5], antialiased=True) # this was used to shade UL and LL
     if np.any(ul_mask == 0): # only if we have any upper limits
         matplotlib.hatch._hatch_types.append(ArrowHatch)
@@ -204,7 +207,10 @@ else:
     # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='Oranges_r', norm=norm)
     # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='uhh_b', norm=norm)
     # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='YlOrRd_r', norm=norm)
-    im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='cubehelix', norm=norm) # Try YlOrRed,
+    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='cubehelix', norm=norm) # Try YlOrRed,
+    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='Blues_r', norm=norm) # Try YlOrRed,
+    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='magma', norm=norm) # Try YlOrRed,
+    im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='magma', norm=norm) # Try YlOrRed,
 
 # contours
 if show_contours:
@@ -236,7 +242,10 @@ if show_grid:
 
 # colorbar
 if show_cbar:
-    addCbar(fig, plottype, im, header, float(int_max), fontsize=fontsize+1)
+    if args.cbar_vertical:
+        addCbar(fig, plottype, im, header, float(int_min), float(int_max), fontsize=fontsize+1,cbanchor=[0.772, 0.11, 0.03, 0.77], orientation='vertical')
+    else:
+        addCbar(fig, plottype, im, header, float(int_min), float(int_max), fontsize=fontsize+1)
 
 # scalebar
 if show_scalebar:
@@ -291,4 +300,4 @@ except NameError:
 if args.transparent or args.png:
     outfile = outfile.replace('pdf', 'png')
 logging.info("Saving..."+outfile)
-fig.savefig(outfile, bbox_inches='tight', transparent=args.transparent)
+fig.savefig(outfile, bbox_inches='tight', transparent=args.transparent, dpi=args.dpi)

@@ -106,6 +106,7 @@ def sfind_image(catprefix,pbimage,sfind_pixel_fraction,options=None):
     else:
         # img = bdsm.process_image(pbimage, thresh_isl=4.0, thresh_pix=5.0, rms_box=(160,50), rms_map=True, mean_map='zero', ini_method='intensity', frequency=144.627e6,adaptive_rms_box=True, adaptive_thresh=150, rms_box_bright=(60,15), group_by_isl=False, group_tol=10.0,output_opts=True, output_all=True, atrous_do=True,atrous_jmax=4, flagging_opts=True, flag_maxsize_fwhm=0.5,advanced_opts=True, ncores=options['NCPU'], blank_limit=None,**kwargs)
         img = bdsm.process_image(pbimage, thresh_isl=6.0, thresh_pix=7.0, rms_box=(160,50), rms_map=True, mean_map='zero', ini_method='intensity', frequency=144.627e6,adaptive_rms_box=True, adaptive_thresh=50, rms_box_bright=(50,15), group_by_isl=False, group_tol=10.0,output_opts=True, output_all=True, atrous_do=True,atrous_jmax=4, flagging_opts=True, flag_maxsize_fwhm=0.5,advanced_opts=True, ncores=options['NCPU'], blank_limit=None,**kwargs)
+        img.write_catalog(catalog_type='gaul',bbs_patches='source',srcroot='src', format='bbs',correct_proj='True')
         img.write_catalog(outfile=catprefix +'.cat.fits',catalog_type='srl',format='fits',correct_proj='True')
         img.export_image(outfile=catprefix +'.rms.fits',img_type='rms',img_format='fits',clobber=True)
         img.export_image(outfile=catprefix +'.resid.fits',img_type='gaus_resid',img_format='fits',clobber=True)

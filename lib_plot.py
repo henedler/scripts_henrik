@@ -88,8 +88,10 @@ def addBeam(ax, hdr, edgecolor='black'):
 
     assert np.abs(hdr['CDELT1']) == np.abs(hdr['CDELT2'])
     pixscale = np.abs(hdr['CDELT1'])
-    posx = ax.get_xlim()[0]+bmaj/pixscale
-    posy = ax.get_ylim()[0]+bmaj/pixscale
+    offsetx = np.abs(ax.get_xlim()[1] - ax.get_xlim()[0]) / 50
+    offsety = np.abs(ax.get_ylim()[1] - ax.get_ylim()[0]) / 50
+    posx = ax.get_xlim()[0]+bmaj/pixscale+ offsetx
+    posy = ax.get_ylim()[0]+bmaj/pixscale+ offsety
     r = beam.ellipse_to_plot(posx, posy, pixscale *u.deg)
     r.set_edgecolor(edgecolor)
     r.set_facecolor('white')
@@ -110,26 +112,36 @@ def addRegion(regionfile, ax, header, alpha=1.0, color=None, text=True):
             print(a)
             ax.add_artist(a)
 
-def addCbar(fig, plottype, im, header, int_max, fontsize, cbanchor=[0.127, 0.89, 0.772, 0.02]):
+def addCbar(fig, plottype, im, header, int_min, int_max, fontsize, cbanchor=[0.127, 0.89, 0.772, 0.02], orientation='horizontal'):
     cbaxes = fig.add_axes(cbanchor)
-    cbar = ColorbarBase(cbaxes, cmap=im.get_cmap(), norm=im.norm, orientation='horizontal',  alpha=1.0) #
+    cbar = ColorbarBase(cbaxes, cmap=im.get_cmap(), norm=im.norm, orientation=orientation,  alpha=1.0)
     # cbar = fig.colorbar(im, cax=cbaxes, orientation='horizontal', pad=0.35, alpha=1.0)
+    if orientation == 'horizontal':
+        labelax = cbaxes.xaxis
+        rot = 0
+    else:
+        labelax = cbaxes.yaxis
+        rot=90
     if plottype == 'stokes':
         # cbaxes.xaxis.set_label_text(r'rms noise level [mJy beam$^{-1}$]', fontsize=fontsize)
-        cbaxes.xaxis.set_label_text(r'Surface brightness [mJy beam$^{-1}$]', fontsize=fontsize)
-        # log_start, log_stop = -2, np.floor(np.log10(int_max)).astype(int)
+        labelax.set_label_text(r'Surface brightness [mJy beam$^{-1}$]', fontsize=fontsize)
+        log_start, log_stop = -2, np.floor(np.log10(int_max)).astype(int)
         # cbar.set_ticks([0.001,0.005,0.01,0.05,0.1,0.5,1.,5.,10.])
-        # cbar.set_ticks(10**(np.linspace(log_start, log_stop+1, log_stop - log_start +2 )))  # horizontal colorbar
+        cbar.set_ticks(10**(np.linspace(log_start, log_stop+1, log_stop - log_start +2 )) )  # horizontal colorbar
     elif plottype in ['si', 'si+err']:
-        cbaxes.xaxis.set_label_text(r'$\alpha_{'+f'{(header["FREQLO"]*1e-6):.0f}'+'MHz}^{'f'{(header["FREQHI"]*1e-6):.0f}'+'MHz}$', fontsize=fontsize)
+        labelax.set_label_text(r'$\alpha_{'+f'{(header["FREQLO"]*1e-6):.0f}'+'MHz}^{'f'{(header["FREQHI"]*1e-6):.0f}'+'MHz}$', fontsize=fontsize, rotation=rot)
     elif plottype == 'sierr':
-        cbaxes.xaxis.set_label_text(r'$\Delta\alpha_{'+f'{(header["FREQLO"]*1e-6):.0f}'+'MHz}^{'f'{(header["FREQHI"]*1e-6):.0f}'+'MHz}$', fontsize=fontsize)
+        labelax.set_label_text(r'$\Delta\alpha_{'+f'{(header["FREQLO"]*1e-6):.0f}'+'MHz}^{'f'{(header["FREQHI"]*1e-6):.0f}'+'MHz}$', fontsize=fontsize, rotation=rot)
     elif plottype == 'curvature':
-        cbaxes.xaxis.set_label_text('Curvature', fontsize=fontsize)
+        labelax.set_label_text('Curvature', fontsize=fontsize, rotation=rot)
     elif plottype == 'curverr':
-        cbaxes.xaxis.set_label_text('Curvature error', fontsize=fontsize)
+        labelax.set_label_text('Curvature error', fontsize=fontsize, rotation=rot)
+    elif plottype == 'ratio':
+        labelax.set_label_text(r'$\mathrm{log_{10}(Radio/SFR)}$', fontsize=fontsize, rotation=rot)
+
     else:
         raise ValueError(f'plottype {plottype} unknown.')
-    cbaxes.xaxis.tick_top()
-    cbaxes.xaxis.set_label_position('top')
-    cbar.ax.tick_params(labelsize=fontsize-3)
+    if orientation == 'horizontal':
+        cbaxes.xaxis.tick_top()
+        cbaxes.xaxis.set_label_position('top')
+    cbar.ax.tick_params(labelsize=fontsize-3, rotation=rot)

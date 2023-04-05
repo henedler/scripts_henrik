@@ -186,7 +186,7 @@ if __name__ == "__main__":
     
     savename = args.output
     
-    grid = Table.read(args.gridfile)
+    grid = Table.read(args.gridfile, format='ascii')
     
     sky_ra = grid['ra']
     sky_dec = grid['dec']

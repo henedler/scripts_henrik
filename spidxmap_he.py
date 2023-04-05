@@ -66,6 +66,9 @@ if args.radec is not None and len(args.radec) != 2:
     logging.error('--radec must be in the form of "RA DEC" (2 floats).')
     sys.exit(1)
 
+if args.sigma and not args.noise:
+    logging.error('Cannot use --sigma flag without calculating noise. Provide also --noise.')
+    sys.exit(1)
 
 if __name__ == '__main__':
     ########################################################
@@ -103,7 +106,7 @@ if __name__ == '__main__':
 
     for i, image in enumerate(all_images):
         if args.noise:
-            if args.sigma is not None:
+            if args.sigma:
                 image.calc_noise(sigma=args.sigma, bg_reg=args.bgreg)  # after mask?/convolution
                 print(image.noise)
                 image.blank_noisy(args.sigma)
