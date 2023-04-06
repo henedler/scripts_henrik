@@ -22,7 +22,7 @@ from astropy.visualization import (SqrtStretch, PercentileInterval,
                                    LinearStretch, LogStretch,
                                    ImageNormalize, AsymmetricPercentileInterval)
 from lib_plot import addRegion, addCbar, addBeam, addScalebar, setSize
-from lib_fits import flatten
+from lib_fits import flatten, Image
 
 # TODO use frits Legacy survey script
 
@@ -46,6 +46,7 @@ def get_overlay_image(coord: SkyCoord, size, wcs: WCS, window='optical') -> [np.
 
     image = None
     survey_list_optical = ['CDS/P/DESI-Legacy-Surveys/DR10/color', 'CDS/P/SDSS9/color', 'CDS/P/DSS2/color'] # 'CDS/P/PanSTARRS/DR1/color-i-r-g',
+    survey_list_hst = ['ESAVO/P/HST/ACS','CDS/P/HST/SDSSg'] #, 'CDS/P/HST/EPO',
     # survey_list_g = [ 'CDS/P/SDSS9/color', 'CDS/P/DSS2/color'] # 'CDS/P/PanSTARRS/DR1/color-i-r-g',
     survey_list_uv = ['CDS/P/GALEXGR6/AIS/color']
     survey_list_ir = ['ov-gso/P/HeViCS/100', 'ESAVO/P/HERSCHEL/SPIRE-100']
@@ -56,17 +57,22 @@ def get_overlay_image(coord: SkyCoord, size, wcs: WCS, window='optical') -> [np.
         survey_list = survey_list_ir
     elif window.lower() == 'uv':
         survey_list = survey_list_uv
+    elif window.lower() == 'hst':
+        survey_list = survey_list_hst
     else:
         raise ValueError(f'Spectral window {window} unknow, use optical / ir / uv.')
 
     for survey in survey_list:
         try:
             image = get_img_from_hips(survey)
-            if image is not None:
+            print(np.array(image.getdata().histogram()) > 0)
+            empty = sum(np.array(image.getdata().histogram()) > 0) <= 4
+            print(empty)
+            if (image is not None) and not empty:
                 break
         except urllib.error.HTTPError as e:
             print(f"Not found in {survey[0]}")
-    if image is None:
+    if (image is None) or empty:
         raise ValueError('Could not find image in databases...')
     return image
 
@@ -78,14 +84,14 @@ parser.add_argument('--titlename', help='Title name of target')
 parser.add_argument('-s', '--size', type=float, default=8., help='size in arcmin')
 parser.add_argument('-z', '--redshift', type=float, help='redshift.')
 parser.add_argument('-d', '--distance', type=float, help='distance in Mpc.')
-parser.add_argument('-n', '--noise', type=float, default=0.2, help='Hardcode noise level in mJy/beam.')
-parser.add_argument('-u', '--upsample', type=int, default=2, help='Upsample the image by this factor.')
+parser.add_argument('-u', '--upsample', type=int, default=2, help='Upsample the background image by this factor compared to the radio map.')
+parser.add_argument('-n', '--noise', type=float, default=0.2, help='Use hardcode noise level in mJy/beam instead of auto-finding noise.')
+parser.add_argument('--noisemap', type=str, help='Use a noise map in mJy/beam (e.g. a residual image).')
 parser.add_argument('--no_axes', default=False, action='store_true', help='Show no axes.')
-parser.add_argument('--noisemap', type=str, help='Noise map in mJy/beam.')
 parser.add_argument('--ctr_start', type=float, default=3, help='Start contours at X sigma.')
 parser.add_argument('--skip', action='store_true', help='Skip existing plots?')
 parser.add_argument('--arrow', action='store_true',help='If set to true, point arrow to m87 (e.g. cluster center)')
-parser.add_argument('--window', type=str, default='optical', help='optical (default) / IR / UV / legacy ')
+parser.add_argument('--window', type=str, default='optical', help='optical (default) / IR / UV / HST ')
 parser.add_argument('--transparent', default=False, action='store_true', help='Transparent background (png).')
 parser.add_argument('-o', '--outfile', default=None, help='prefix of output image')
 
@@ -116,8 +122,9 @@ else:
     coord = SkyCoord.from_name(name)
 # Cutout central region
 cutout = Cutout2D(data, coord, size=size, wcs=in_wcs)
-noise = args.noise
-if args.noisemap:
+if args.noise:
+    noise = args.noise
+elif args.noisemap:
     print(f"Using {args.noisemap} to calculate noise...")
     # Load FITS file
     wcs_n, data_n = flatten(args.noisemap)
@@ -128,6 +135,10 @@ if args.noisemap:
         cutout_n = Cutout2D(data_n, coord, size=size, wcs=in_wcs)
     noise = np.nanstd(cutout_n.data)
     print(f"Found background rms: {noise:.3f}mJy/beam.")
+else:
+    noise = Image(args.image).calc_noise()
+    print(f"Found background rms: {noise:.3f}mJy/beam.")
+
 
 # create upsampled wcs
 uhdr = cutout.wcs.to_header()
