@@ -85,7 +85,7 @@ parser.add_argument('-s', '--size', type=float, default=8., help='size in arcmin
 parser.add_argument('-z', '--redshift', type=float, help='redshift.')
 parser.add_argument('-d', '--distance', type=float, help='distance in Mpc.')
 parser.add_argument('-u', '--upsample', type=int, default=2, help='Upsample the background image by this factor compared to the radio map.')
-parser.add_argument('-n', '--noise', type=float, default=0.2, help='Use hardcode noise level in mJy/beam instead of auto-finding noise.')
+parser.add_argument('-n', '--noise', type=float, help='Use hardcode noise level in mJy/beam instead of auto-finding noise.')
 parser.add_argument('--noisemap', type=str, help='Use a noise map in mJy/beam (e.g. a residual image).')
 parser.add_argument('--no_axes', default=False, action='store_true', help='Show no axes.')
 parser.add_argument('--ctr_start', type=float, default=3, help='Start contours at X sigma.')
@@ -136,7 +136,7 @@ elif args.noisemap:
     noise = np.nanstd(cutout_n.data)
     print(f"Found background rms: {noise:.3f}mJy/beam.")
 else:
-    noise = Image(args.image).calc_noise()
+    noise = Image(args.image).calc_noise() * 1e3
     print(f"Found background rms: {noise:.3f}mJy/beam.")
 
 
