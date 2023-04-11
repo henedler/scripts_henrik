@@ -141,6 +141,7 @@ else:
 
 
 # create upsampled wcs
+# test 123
 uhdr = cutout.wcs.to_header()
 # make sure upsample factor leads to the correct integer value for the new image size
 factor = args.upsample
