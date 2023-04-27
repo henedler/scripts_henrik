@@ -12,7 +12,6 @@ matplotlib.use('Agg') # aplpy api suggestion
 import matplotlib.pyplot as plt
 import matplotlib.hatch
 from astropy.wcs import WCS
-import colormaps
 from astropy.table import Table
 from astropy.visualization import (SqrtStretch, PercentileInterval,
                                    LinearStretch, LogStretch,
