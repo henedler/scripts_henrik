@@ -42,7 +42,7 @@ parser.add_argument('--noise', dest='noise', action='store_true', help='Calculat
 parser.add_argument('--save', dest='save', action='store_true', help='Save intermediate results')
 parser.add_argument('--force', dest='force', action='store_true', help='Force remake intermediate results')
 parser.add_argument('--sigma', dest='sigma', type=float, help='Restrict to pixels above this sigma in all images')
-parser.add_argument('--fluxscaleerr', dest='fluxscaleerr', type=float, default=0.0, help='Systematic error of flux scale. One value for all images.')
+parser.add_argument('--fluxscaleerr', nargs='*', dest='fluxscaleerr', type=float, default=0.0, help='Systematic error of flux scale. One value for all images.')
 parser.add_argument('--upperlimit', dest='upperlimit', type=float, help='Place upper limits below this value if not detected at highest frequency at sigma. Float, e.g. -1.0')
 parser.add_argument('--lowerlimit', dest='lowerlimit', type=float, help='Place lower limits below this value if not detected at lowest frequency at sigma. Float, e.g. -0.6')
 parser.add_argument('--circbeam', dest='circbeam', action='store_true', help='Force final beam to be circular (default: False, use minimum common beam area)')
@@ -69,6 +69,13 @@ if args.radec is not None and len(args.radec) != 2:
 if args.sigma and not args.noise:
     logging.error('Cannot use --sigma flag without calculating noise. Provide also --noise.')
     sys.exit(1)
+
+if len(args.fluxscaleerr) == 1:
+    fluxscaleerr = args.fluxscaleerr[0]*np.ones(len(args.images))
+else:
+    if not (len(args.images) == len(args.fluxscaleerr)):
+        logging.error(f'Either provide one fluxscaleerr for all images or excatly one per image.')
+        sys.exit(1)
 
 if __name__ == '__main__':
     ########################################################
@@ -158,7 +165,7 @@ if __name__ == '__main__':
             if np.isnan(val4reg).all(): continue
             if len(frequencies) == 2:
                 if args.upperlimit and np.isnan(val4reg[-1]):
-                    this_err = np.sqrt(yerr[0] ** 2 + (args.fluxscaleerr * val4reg[0]) ** 2)
+                    this_err = np.sqrt(yerr[0] ** 2 + (fluxscaleerr[0] * val4reg[0]) ** 2)
                     spidx_data[i,j], _ = linsq_spidx(frequencies, [val4reg[0], args.sigma*yerr[-1]], [this_err, 0.])
                     if spidx_data[i,j] < args.upperlimit: # only show upper limits lower than this
                         regrid_hdr[f'UL{ul}'] = f'{i},{j}'
@@ -167,7 +174,7 @@ if __name__ == '__main__':
                         spidx_data[i, j] = np.nan
                         spidx_err_data[i, j] = np.nan
                 elif args.lowerlimit and np.isnan(val4reg[0]):
-                    this_err = np.sqrt(yerr[-1] ** 2 + (args.fluxscaleerr * val4reg[1]) ** 2)
+                    this_err = np.sqrt(yerr[-1] ** 2 + (fluxscaleerr[1] * val4reg[1]) ** 2)
                     spidx_data[i, j], _ = linsq_spidx(frequencies, [args.sigma * yerr[0], val4reg[1]],  [0., this_err])
                     if spidx_data[i, j] > args.lowerlimit:  # only show upper limits lower than this
                         regrid_hdr[f'LL{ll}'] = f'{i},{j}'
@@ -176,7 +183,7 @@ if __name__ == '__main__':
                         spidx_data[i,j] = np.nan
                         spidx_err_data[i,j] = np.nan
                 else:
-                    this_err = np.sqrt(yerr ** 2 + (args.fluxscaleerr * val4reg) ** 2)
+                    this_err = np.sqrt(yerr ** 2 + (fluxscaleerr * val4reg) ** 2)
                     spidx_data[i,j], spidx_err_data[i,j] = linsq_spidx(frequencies, val4reg, this_err)
             else:
                 (a, b, sa, sb) = linear_fit_bootstrap(x=frequencies, y=val4reg, yerr=yerr, tolog=True)

@@ -75,7 +75,7 @@ if __name__ == '__main__':
 
     assert len(set(dirlba).difference(set(dirhba))) == 0, 'directions wrong'
 
-    antsel = ['CS001','CS002','CS003','CS004','CS005','CS006','CS007','CS011','CS013','CS017','CS021','CS024',
+    antsel = ['CS001','CS002','CS003','CS004','CS005','CS006','CS007','CS011','CS013','CS017','CS024',
               'CS026','CS028','CS030','CS031','CS032','CS101','CS103','CS201','CS301','CS302','CS401','CS501',
               'RS205','RS208','RS210','RS305','RS306','RS307','RS310','RS406','RS407','RS409','RS503','RS508','RS509'] #,'CS021
     antlba = stlba.getAxisValues('ant')
@@ -96,7 +96,7 @@ if __name__ == '__main__':
     #         inhba.append(False)
 
     slc_lba = [ant[0:5] in antsel for ant in stlba.getAxisValues('ant')]
-    # slc_hba = [ant[0:5] in antsel and ant[-1] != '1' for ant in sthba.getAxisValues('ant')]
+    slc_hba = [ant[0:5] in antsel and ant[-1] != '1' for ant in sthba.getAxisValues('ant')]
     print('Ant slices: \n', stlba.getAxisValues('ant')[slc_lba])
     print(stlba.val.shape)
     phlba = stlba.val[dirorderlba]
@@ -120,6 +120,7 @@ if __name__ == '__main__':
     whba = sthba.weight[dirorderhba]
     whba = whba[...,slc_hba]
     print('concatenate along freq axis...')
+    print(phlba.shape, phhba.shape)
     phases = np.concatenate((phlba,phhba), axis=2)
     weights = np.concatenate((wlba,whba), axis=2)
 

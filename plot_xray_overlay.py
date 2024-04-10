@@ -26,60 +26,9 @@ from lib_fits import flatten, Image
 
 # TODO use frits Legacy survey script
 
-def get_overlay_image(coord: SkyCoord, size, wcs: WCS, window='optical') -> [np.array]:
-    """
-    Returns an image from the SDSS image query in bytes format. Can be used
-    to set as RGB background for FITSimages in aplpy.
-    We check if the img exists in astroquery (https://astroquery.readthedocs.io/en/latest/skyview/skyview.html) cat
-    and then get it from hips2fits query (https://aladin.u-strasbg.fr/hips/list)
-
-    :param coord: Coordinate object for the center
-    :param size: float, size of the cutout in deg
-    :param wcs: WCS of the fits file
-    :return: img, io.BytesIO object, visual image of the chosen region
-    """
-    def get_img_from_hips(survey):
-        # survey: list of len two: [survey name to check for image existance, hips sever path]
-        print(f"Trying {survey}")
-        # Load the Image
-        return PIL.Image.fromarray(hips2fits.query_with_wcs(survey, wcs=wcs, format="png"))
-
-    image = None
-    survey_list_optical = ['CDS/P/DESI-Legacy-Surveys/DR10/color', 'CDS/P/SDSS9/color', 'CDS/P/DSS2/color'] # 'CDS/P/PanSTARRS/DR1/color-i-r-g',
-    survey_list_hst = ['ESAVO/P/HST/ACS','CDS/P/HST/SDSSg'] #, 'CDS/P/HST/EPO',
-    # survey_list_g = [ 'CDS/P/SDSS9/color', 'CDS/P/DSS2/color'] # 'CDS/P/PanSTARRS/DR1/color-i-r-g',
-    survey_list_uv = ['CDS/P/GALEXGR6/AIS/color']
-    survey_list_ir = ['ov-gso/P/HeViCS/100', 'ESAVO/P/HERSCHEL/SPIRE-100']
-
-    if window.lower() == 'optical':
-        survey_list = survey_list_optical
-    elif window.lower() == 'ir':
-        survey_list = survey_list_ir
-    elif window.lower() == 'uv':
-        survey_list = survey_list_uv
-    elif window.lower() == 'hst':
-        survey_list = survey_list_hst
-    else:
-        raise ValueError(f'Spectral window {window} unknow, use optical / ir / uv.')
-
-    for survey in survey_list:
-        try:
-            image = get_img_from_hips(survey)
-            print(np.array(image.getdata().histogram()) > 0)
-            empty = sum(np.array(image.getdata().histogram()) > 0) <= 4
-            print(empty)
-            if (image is not None) and not empty:
-                break
-        except urllib.error.HTTPError as e:
-            print(f"Not found in {survey[0]}")
-    if (image is None) or empty:
-        raise ValueError('Could not find image in databases...')
-    return image
-
 
 parser = argparse.ArgumentParser(description='Plotting script to overlay fits contours on SDSS image')
 parser.add_argument('image', help='fits image to plot.')
-parser.add_argument('-t','--target', help='Name of target (Messier, NGC, VCC, IC...). Can also be multiple targets provided like M60+NGC4647.')
 parser.add_argument('--ra', type=float, help='Ra in deg')
 parser.add_argument('--dec', type=float, help='Dec in deg')
 parser.add_argument('--titlename', help='Title name of target')
@@ -87,13 +36,11 @@ parser.add_argument('-s', '--size', type=float, default=8., help='size in arcmin
 parser.add_argument('-z', '--redshift', type=float, help='redshift.')
 parser.add_argument('-d', '--distance', type=float, help='distance in Mpc.')
 parser.add_argument('-u', '--upsample', type=int, default=2, help='Upsample the background image by this factor compared to the radio map.')
-parser.add_argument('-n', '--noise', type=float, help='Use hardcode noise level in mJy/beam instead of auto-finding noise.')
-parser.add_argument('--noisemap', type=str, help='Use a noise map in mJy/beam (e.g. a residual image).')
 parser.add_argument('--no_axes', default=False, action='store_true', help='Show no axes.')
-parser.add_argument('--ctr_start', type=float, default=3, help='Start contours at X sigma.')
+parser.add_argument('--ctr_start', type=float, help='Start contours at X.')
+parser.add_argument('--ctr_end', type=float, help='End contours at X.')
 parser.add_argument('--skip', action='store_true', help='Skip existing plots?')
-parser.add_argument('--arrow', action='store_true',help='If set to true, point arrow to m87 (e.g. cluster center)')
-parser.add_argument('--window', type=str, default='optical', help='optical (default) / IR / UV / HST ')
+parser.add_argument('--layer', type=str, default='ls-dr9', help='ls-dr9 / sdss')
 parser.add_argument('--transparent', default=False, action='store_true', help='Transparent background (png).')
 parser.add_argument('-o', '--outfile', default=None, help='prefix of output image')
 
@@ -127,26 +74,8 @@ else:
         coord = SkyCoord.from_name(name)
 # Cutout central region
 cutout = Cutout2D(data, coord, size=size, wcs=in_wcs)
-if args.noise:
-    noise = args.noise
-elif args.noisemap:
-    print(f"Using {args.noisemap} to calculate noise...")
-    # Load FITS file
-    wcs_n, data_n = flatten(args.noisemap)
-    data_n = data_n * 1000
-    try:
-        cutout_n = Cutout2D(data_n, coord, size=size, wcs=wcs_n)
-    except AttributeError:
-        cutout_n = Cutout2D(data_n, coord, size=size, wcs=in_wcs)
-    noise = np.nanstd(cutout_n.data)
-    print(f"Found background rms: {noise:.3f}mJy/beam.")
-else:
-    noise = Image(args.image).calc_noise() * 1e3
-    print(f"Found background rms: {noise:.3f}mJy/beam.")
-
 
 # create upsampled wcs
-# test 123
 uhdr = cutout.wcs.to_header()
 # make sure upsample factor leads to the correct integer value for the new image size
 factor = args.upsample
@@ -163,14 +92,11 @@ sample_data = scipy.ndimage.filters.gaussian_filter(sample_data, factor/3)
 
 # get background image from hips
 uwcs = WCS(uhdr)
-if args.window == 'legacy':
-    fname = legacystamps.download(coord.ra.deg, coord.dec.deg, bands='grz', mode='jpeg', size=size.to_value('deg'),
-                          pixscale=np.abs(3600 * header['CDELT1'] / factor), autoscale=True, )
-    image = plt.imread(fname)
-    image = image[::-1]
-    os.system(f"rm {fname}")
-else:
-    image = get_overlay_image(coord, size=[uhdr['NAXIS1'], uhdr['NAXIS2']], wcs=uwcs, window=args.window)
+fname = legacystamps.download(coord.ra.deg, coord.dec.deg, bands='grz', mode='jpeg', layers='', size=size.to_value('deg'),
+                      pixscale=np.abs(3600 * header['CDELT1'] / factor), autoscale=True, )
+image = plt.imread(fname)
+image = image[::-1]
+os.system(f"rm {fname}")
 
 # Plot image with e.g. matplotlib
 fig = plt.figure(figsize=(10,10))
@@ -178,7 +104,15 @@ ax = fig.add_subplot(1, 1, 1, projection=uwcs, slices=('x', 'y'))
 lon = ax.coords['ra']
 lat = ax.coords['dec']
 ax.imshow(image, origin="lower", interpolation='kaiser')
-contour_limits = args.ctr_start * 2 ** np.arange(20) * noise
+if args.ctr_start:
+    ctr_start = args.ctr_start
+else:
+    ctr_start = np.percentile(sample_data, 60)
+if args.ctr_end:
+    ctr_end = args.ctr_end
+else:
+    ctr_end = np.percentile(sample_data, 99.9)
+contour_limits = np.logspace(np.log10(ctr_start), np.log10(ctr_end), 10)
 vmin, vmax = contour_limits[0], np.nanmax(sample_data)
 norm = ImageNormalize(sample_data, vmin=vmin, vmax=vmax, stretch=SqrtStretch())
 ctr1 = ax.contour(sample_data, levels=contour_limits, cmap='cool', norm=norm, alpha=1, linewidths=1)
@@ -217,7 +151,6 @@ if args.arrow:
 
 redshift = args.redshift if args.redshift else (70*args.distance/3e5) # assume ~nearby
 addScalebar(ax, uwcs, redshift, 10, fontsize, color='white')
-addBeam(ax, header, edgecolor='white')
 
 # labels
 if not args.no_axes:

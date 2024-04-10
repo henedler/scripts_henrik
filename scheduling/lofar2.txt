@@ -14,3 +14,5 @@
 ~/opt/bin/scripts_henrik/scheduling/grid_sensitivity.py -o virgoLBA20as -m LBA_SPARSE -f 54 -b 24 -n 38 --plotcenters  --recenter 187.7050 12.3911 0 900 1200 virgo/virgo-grid.fits
 #./grid_sensitivity.py -o virgo/virgo1arcsec -m LBA_ALL -f 52 -b 24 -n 52 -c 2 --plotcenters --recenter 187.7050 12.3911 0 900 1200 virgo/virgo-grid.fits
 
+~/opt/bin/scripts_henrik/scheduling/grid_sensitivity.py -o virgoLBA20as -m LBA_SPARSE  -f 54 -b 24 -n 38 --plotcenters  --recenter 187.7050 12.3911 0 900 1200 virgo/virgo-grid-obtained_data.txt
+

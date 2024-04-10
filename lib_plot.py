@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib.offsetbox
 import matplotlib.hatch
 from matplotlib.patches import Polygon
@@ -25,7 +24,7 @@ class ArrowHatch(matplotlib.hatch.Shapes):
         v2 = np.copy(v1)[::-1]
         v2[:,1] *= -1
         v = np.concatenate((v1,v2))
-        self.path = Polygon(v, closed=True, fill=False).get_path()
+        self.path = Polygon(v, closed=True, fill=True).get_path()
         self.num_lines = 0
         if len(hatch) >= 5:
             if hatch[:3] == "arr":
@@ -86,7 +85,7 @@ def addBeam(ax, hdr, edgecolor='black'):
     bpa = hdr['BPA']
     beam = Beam(bmaj*u.deg,bmin*u.deg,bpa*u.deg)
 
-    assert np.abs(hdr['CDELT1']) == np.abs(hdr['CDELT2'])
+    assert np.isclose(np.abs(hdr['CDELT1']), np.abs(hdr['CDELT2']), rtol=1e-3)
     pixscale = np.abs(hdr['CDELT1'])
     offsetx = np.abs(ax.get_xlim()[1] - ax.get_xlim()[0]) / 50
     offsety = np.abs(ax.get_ylim()[1] - ax.get_ylim()[0]) / 50
@@ -129,11 +128,13 @@ def addCbar(fig, plottype, im, header, int_min, int_max, fontsize, cbanchor=[0.1
         # cbar.set_ticks([0.001,0.005,0.01,0.05,0.1,0.5,1.,5.,10.])
         cbar.set_ticks(10**(np.linspace(log_start, log_stop+1, log_stop - log_start +2 )) )  # horizontal colorbar
     elif plottype in ['si', 'si+err']:
-        labelax.set_label_text(r'$\alpha_{'+f'{(header["FREQLO"]*1e-6):.0f}'+'MHz}^{'f'{(header["FREQHI"]*1e-6):.0f}'+'MHz}$', fontsize=fontsize, rotation=rot)
+        pass
+        # labelax.set_label_text(r'$\alpha_\mathrm{'+f'{(header["FREQLO"]*1e-6):.0f}'+'\,MHz}^\mathrm{'f'{(header["FREQHI"]*1e-6):.0f}'+'\,MHz}$', fontsize=fontsize, rotation=rot)
     elif plottype == 'sierr':
-        labelax.set_label_text(r'$\Delta\alpha_{'+f'{(header["FREQLO"]*1e-6):.0f}'+'MHz}^{'f'{(header["FREQHI"]*1e-6):.0f}'+'MHz}$', fontsize=fontsize, rotation=rot)
+        labelax.set_label_text(r'$\Delta\alpha_\mathrm{'+f'{(header["FREQLO"]*1e-6):.0f}'+'\,MHz}^\mathrm{'f'{(header["FREQHI"]*1e-6):.0f}'+'\,MHz}$', fontsize=fontsize, rotation=rot)
     elif plottype == 'curvature':
-        labelax.set_label_text('Curvature', fontsize=fontsize, rotation=rot)
+        pass
+        # labelax.set_label_text('Curvature', fontsize=fontsize, rotation=rot)
     elif plottype == 'curverr':
         labelax.set_label_text('Curvature error', fontsize=fontsize, rotation=rot)
     elif plottype == 'ratio':

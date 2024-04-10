@@ -101,8 +101,9 @@ def sfind_image(catprefix,pbimage,sfind_pixel_fraction,options=None):
         lowery,uppery = int(((1.0-sfind_pixel_fraction)/2.0)*imsizey),int(((1.0-sfind_pixel_fraction)/2.0)*imsizey + sfind_pixel_fraction*imsizey)
         kwargs['trim_box']=(lowerx,upperx,lowery,uppery)
 
-    if options['restart'] and os.path.isfile(catprefix +'.cat.fits'):
-        warn('File ' + catprefix +'.cat.fits already exists, skipping source finding step')
+    # if options['restart'] and os.path.isfile(catprefix +'.cat.fits'):
+    if os.path.isfile(catprefix + '.cat.fits'):
+            warn('File ' + catprefix +'.cat.fits already exists, skipping source finding step')
     else:
         # img = bdsm.process_image(pbimage, thresh_isl=4.0, thresh_pix=5.0, rms_box=(160,50), rms_map=True, mean_map='zero', ini_method='intensity', frequency=144.627e6,adaptive_rms_box=True, adaptive_thresh=150, rms_box_bright=(60,15), group_by_isl=False, group_tol=10.0,output_opts=True, output_all=True, atrous_do=True,atrous_jmax=4, flagging_opts=True, flag_maxsize_fwhm=0.5,advanced_opts=True, ncores=options['NCPU'], blank_limit=None,**kwargs)
         img = bdsm.process_image(pbimage, thresh_isl=6.0, thresh_pix=7.0, rms_box=(160,50), rms_map=True, mean_map='zero', ini_method='intensity', frequency=144.627e6,adaptive_rms_box=True, adaptive_thresh=50, rms_box_bright=(50,15), group_by_isl=False, group_tol=10.0,output_opts=True, output_all=True, atrous_do=True,atrous_jmax=4, flagging_opts=True, flag_maxsize_fwhm=0.5,advanced_opts=True, ncores=options['NCPU'], blank_limit=None,**kwargs)
@@ -130,6 +131,7 @@ def crossmatch_image(lofarcat,auxcatname,options=None,catdir='.'):
         matches=match_catalogues(t,tab,o[auxcatname+'_matchrad'],auxcatname)
         t=t[~np.isnan(t[auxcatname+'_separation'])]
         t.write(lofarcat+'_'+auxcatname+'_match.fits')
+    print(f'{len(t)} matches')
     return matches
         
 def do_plot_facet_offsets(t,regfile,savefig=None):
@@ -302,6 +304,7 @@ if __name__=='__main__':
         t=Table.read(o['catprefix']+'.cat.fits_NVSS_match_filtered.fits')
         # t=t[t['Total_flux']>200e-3]
         t=t[t['Total_flux']>30e-3]
+        print('above 30mjy: ', len(t))
         ratios=old_div(t['Total_flux'],t['NVSS_Total_flux'])
         bsratio=np.percentile(bootstrap(ratios,np.median,10000),(16,84))
         print('Median LOFAR/NVSS ratio is %.3f (1-sigma %.3f -- %.3f)' % (np.median(ratios),bsratio[0],bsratio[1]))

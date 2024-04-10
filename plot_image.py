@@ -59,15 +59,20 @@ else:
 # stretch type (only stokes) 'log' (for extended) or 'sqrt' (for compact)
 stretch_type = args.stretch
 # Style
-fontsize = 14
+fontsize = 18
 # Scalebar
 show_scalebar = not args.no_sbar
 if show_scalebar:
     z = args.redshift
 kpc = args.sbar_kpc # how many kpc is the scalebar?
-accentcolor = 'black'
-# plt.style.use('dark_background')
-# accentcolor = 'white' if args.type == 'stokes' else 'black'
+plt.style.use('dark_background')
+plt.rcParams.update({
+    "figure.facecolor":  (0.0, 0.0, 0.0, 0.0),
+    "axes.facecolor":    (0.0, 0.0, 0.0, 1.0),
+    "savefig.facecolor": (0.0, 0.0, 0.0, 0.0)
+})
+accentcolor = 'white' if args.type == 'stokes' else 'black'
+accentcolor = 'white'
 
 show_cbar = not args.no_cbar
 show_grid = args.show_grid
@@ -161,7 +166,9 @@ norm = ImageNormalize(data, vmin=float(int_min), vmax=float(int_max), stretch=st
 # bkgr image
 logging.info("Image...")
 if plottype in ['si','si+err']:
-    from colormaps import *
+    # from colormaps import *
+    import nmmn.plots
+    turbo = nmmn.plots.turbocmap()  # Turbo
     ul_mask = np.ones_like(data, dtype=int)
     ll_mask = np.ones_like(data, dtype=int)
     all_limit_mask = np.ones_like(data, dtype=int)
@@ -178,22 +185,37 @@ if plottype in ['si','si+err']:
     ll_mask[np.isnan(data)] = -1
     all_limit_mask[np.isnan(data)] = -1
     if plottype == 'si':
-        im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='turbo', norm=norm)
+        im = ax.imshow(data, origin='lower', interpolation='nearest', cmap=turbo, norm=norm)
     elif plottype == 'si+err':
         low_cut = np.percentile(data_alpha[~np.isnan(data_alpha)], 15)
         data_alpha[data_alpha < low_cut] = low_cut
         alpha = 0.7 * (np.nanmin(data_alpha)/data_alpha)**2 + 0.3
         alpha[np.isnan(alpha)] = 0.3
         print(alpha.shape, data.shape)
-        im = ax.imshow(data, alpha=alpha, origin='lower', interpolation='nearest', cmap='turbo', norm=norm)
-        ax.contour(all_limit_mask, levels=[0.5], linewidths=0.5, colors=('black',), antialiased=True)
+        im = ax.imshow(data, alpha=alpha, origin='lower', interpolation='nearest', cmap=turbo, norm=norm)
+        ax.contour(all_limit_mask, levels=[0.5], linewidths=0.5, colors=(accentcolor), antialiased=True)
     # ax.contourf(all_limit_mask, alpha=0.5, color='white', colors=('white',), levels=[-0.5,0.5], antialiased=True) # this was used to shade UL and LL
     if np.any(ul_mask == 0): # only if we have any upper limits
         matplotlib.hatch._hatch_types.append(ArrowHatch)
-        ax.contourf(ul_mask, alpha=0.0, levels=[-0.5,0.5], hatches=['arr{270}{7}{2}',''], antialiased=True)
+        cs = ax.contourf(ul_mask, alpha=0.0, levels=[-0.5,0.5], hatches=['arr{270}{7}{2}',''], antialiased=True, colors='none')
+        for i, collection in enumerate(cs.collections):
+            # print(dir(collection))
+            collection.set_edgecolor(accentcolor)
+            # collection.set_linewidth(0.)
+            # collection.set_alpha(1.)
+            path = collection.get_paths()[0]
+            path_patch = matplotlib.patches.PathPatch(path,
+                                                      edgecolor=accentcolor, alpha=1.0, hatch=ArrowHatch,
+                                                      facecolor=accentcolor, linewidth=3)
+            ax.add_patch(path_patch)
+        #     collection.set_color(accentcolor)
     if np.any(ll_mask == 0): # only if we have any upper limits
         matplotlib.hatch._hatch_types.append(ArrowHatch)
-        ax.contourf(ll_mask, alpha=0.0, levels=[-0.5,0.5], hatches=['arr{90}{7}{2}',''], antialiased=True)
+        cs = ax.contourf(ll_mask, alpha=1.0, levels=[-0.5,0.5], hatches=['arr{90}{7}{2}',''], antialiased=True, colors='none')
+        for i, collection in enumerate(cs.collections):
+            collection.set_edgecolor('black')
+            collection.set_color('black')
+            collection.set_linewidth(3.)
 elif plottype == 'sierr':
     im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='RdPu', norm=norm)
 elif plottype == 'curvature':
@@ -208,7 +230,6 @@ else:
     # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='YlOrRd_r', norm=norm)
     # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='cubehelix', norm=norm) # Try YlOrRed,
     # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='Blues_r', norm=norm) # Try YlOrRed,
-    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='magma', norm=norm) # Try YlOrRed,
     im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='magma', norm=norm) # Try YlOrRed,
 
 # contours
@@ -232,7 +253,7 @@ if args.cat:
     ax.scatter(cra, cdec, marker='x', c='red', lw=1, transform=ax.get_transform('world'))
 
 # add beam
-addBeam(ax, header, edgecolor=accentcolor)
+addBeam(ax, img.img_hdr, edgecolor=accentcolor)
 
 logging.info("Refinements...")
 # grid - BUG with ndim images?
@@ -242,9 +263,9 @@ if show_grid:
 # colorbar
 if show_cbar:
     if args.cbar_vertical:
-        addCbar(fig, plottype, im, header, float(int_min), float(int_max), fontsize=fontsize+1,cbanchor=[0.772, 0.11, 0.03, 0.77], orientation='vertical')
+        addCbar(fig, plottype, im, header, float(int_min), float(int_max), fontsize=fontsize+4,cbanchor=[0.772, 0.11, 0.03, 0.77], orientation='vertical')
     else:
-        addCbar(fig, plottype, im, header, float(int_min), float(int_max), fontsize=fontsize+1)
+        addCbar(fig, plottype, im, header, float(int_min), float(int_max), fontsize=fontsize+4)
 
 # scalebar
 if show_scalebar:
@@ -282,16 +303,21 @@ if show_axes:
     lat.set_major_formatter('dd:mm')
     lat.set_ticklabel(rotation=90) # to turn dec vertical
 else:
-    ax.axis('off')
+    # Hide X and Y axes label marks
+    for axis in lon, lat:
+        axis.set_ticklabel_visible(False)
+        axis.set_ticks_visible(False)
+    # hide x and y axes tick marks
+    # ax.axis('off')
 
 try:
     if np.any(all_limit_mask == 0):  # only if we have any upper limits
         import matplotlib.patches as mpatches
         handles = []
         if np.any(ul_mask == 0):  # only if we have any upper limits
-            handles.append(mpatches.Patch( facecolor='k', hatch=r'arr{270}{9}{2}', label='Upper limits', fill=False))
+            handles.append(mpatches.Patch( facecolor=accentcolor, hatch=r'arr{270}{9}{2}', label='Upper limits', fill=False))
         if np.any(ll_mask == 0):  # only if we have any upper limits
-            handles.append(mpatches.Patch( facecolor='k', hatch=r'arr{90}{9}{2}', label='Lower limits', fill=False))
+            handles.append(mpatches.Patch( facecolor=accentcolor, hatch=r'arr{90}{9}{2}', label='Lower limits', fill=False))
         legend = ax.legend(handles = handles, loc=2, fontsize=fontsize, handleheight=1.5)
 except NameError:
     pass

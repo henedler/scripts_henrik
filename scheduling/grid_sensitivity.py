@@ -191,7 +191,7 @@ if __name__ == "__main__":
     sky_ra = grid['ra']
     sky_dec = grid['dec']
     
-    NSIDE = 128
+    NSIDE = 512
     NPIX = hp.nside2npix(NSIDE)
     m = np.zeros(NPIX)
     Npnt = np.zeros(NPIX)
@@ -249,6 +249,12 @@ if __name__ == "__main__":
     print(5.0,np.sum(rmsmap<5.0), np.mean(rmsmap[rmsmap<5.0]), np.sum(rmsmap<5.0)*(27.5/60)**2)
     print(10.0,np.sum(rmsmap<14.0), np.mean(rmsmap[rmsmap<14.0]),  np.median(rmsmap[rmsmap<14.0]), np.sum(rmsmap<14.0)*(27.5/60)**2)
 
+    rms_inner = rmsmap[rmsmap < 22]
+    print(len(rms_inner)/sum((rmsmap > 0) & (np.isfinite(rmsmap))), np.median(rms_inner))
+
+    # print(dir(rmsmap), decmap, ramap)
+    # sys.exit()
+
     print('Plotting...')
     # map statistics
     Srmsmap = rmsmap[np.isfinite(rmsmap)]
@@ -256,7 +262,9 @@ if __name__ == "__main__":
     mx = Srmsmap.max()
     av = np.mean(Srmsmap)
     st = np.std(Srmsmap)
-    
+    smed = np.median(Srmsmap)
+    print(type(Srmsmap), Srmsmap)
+
     # figure 1 - pointing Numer
     if args.recenter:
         rot = args.recenter[0:3]
@@ -302,7 +310,7 @@ if __name__ == "__main__":
     pl.xlim(0.1,5.0)
     pl.grid(alpha=.2)
     pl.title("RMS hist ({n:d} pointings) : {fwhm:.3f} beam FWHM".format(n=len(sky_ra), fwhm=B.FWHM))
-    s = "min: {mn:.2f}\nmax: {mx:.2f}\navg: {av:.2f}\nstd: {st:.2f}".format(mn=mn, mx=mx, av=av, st=st)
+    s = "min: {mn:.2f}\nmax: {mx:.2f}\navg: {av:.2f}\nstd: {st:.2f}\nmed: {med:.2f}".format(mn=mn, mx=mx, av=av, st=st, med=smed)
     pl.text(0.82, 0.98, s, horizontalalignment='left', verticalalignment='top', transform=ax.transAxes)
     pl.savefig("{n:s}_pointingrms_hist.png".format(n=savename))
     

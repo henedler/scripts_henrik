@@ -38,7 +38,9 @@ if __name__ == '__main__':
     model.img_data *=  pix_area # norm again
     model.write(args.model.split('.fits')[0] + '-convolve.fits')
 
-    arr, fp = reproject_interp_chunk_2d((model.img_data, model.img_hdr), image.img_hdr, hdu_in=0, order='bilinear', blocks=(1000, 1000), parallel=False)
+    # arr, fp = reproject_interp_chunk_2d(model.img_data, image.img_hdr, hdu_in=0, order='bilinear', blocks=(1000, 1000), parallel=False)
+    model_hdu = fits.open(args.model.split('.fits')[0] + '-convolve.fits')[0]
+    arr, fp = reproject_interp_chunk_2d(model_hdu, image.img_hdr, hdu_in=0, order='bilinear', blocks=(1000, 1000), parallel=False)
     model.write(args.model.split('.fits')[0] + '-convolve-regrid.fits')
     arr[np.isnan(arr)] = 0.0
 

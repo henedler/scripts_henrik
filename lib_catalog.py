@@ -361,4 +361,24 @@ class RadioCat(Cat):
             print(f"median: {median}")
             print(f"percentiles/median: 16%:{np.percentile(ratios, 16)/median}, 84%:{np.percentile(ratios, 84)/median}")
 
+    def get_matches(self, labels):
+        """
+        Return the catalogue where we have common matches between the provided labels
+        Parameters
+        ----------
+        labels: list, labels of the catalogues where we want the matches
+
+        Returns
+        -------
+        Cat object, catalogue where we have the matches
+        """
+        if isinstance(labels,str): labels = [labels]
+        keys = [label+'_match' for label in labels]
+        for i, key in enumerate(keys):
+            if i == 0:
+                matched = self[key].copy()
+            else:
+                matched &= self[key]
+        print(f'Found {np.sum(matched)} common matches')
+        return RadioCat(self.cat[matched], self.catname)
 
