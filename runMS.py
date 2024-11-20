@@ -7,6 +7,7 @@ from LiLF import lib_ms, lib_img, lib_util, lib_log
 logger_obj = lib_log.Logger('script-run.logger')
 logger = lib_log.logger
 s = lib_util.Scheduler(log_dir = logger_obj.log_dir, dry = False)
+print(glob.glob(sys.argv[1] + '/*.MS'))
 MSs = lib_ms.AllMSs(glob.glob(sys.argv[1] + '/*.MS') , s, check_flags=False )
 if len(MSs.getListStr()) == 0:
         MSs = lib_ms.AllMSs(glob.glob(sys.argv[1] + '/*.MS'), s, check_flags=False)

@@ -73,6 +73,7 @@ if args.sigma and not args.noise:
 if len(args.fluxscaleerr) == 1:
     fluxscaleerr = args.fluxscaleerr[0]*np.ones(len(args.images))
 else:
+    fluxscaleerr = np.array(args.fluxscaleerr)
     if not (len(args.images) == len(args.fluxscaleerr)):
         logging.error(f'Either provide one fluxscaleerr for all images or excatly one per image.')
         sys.exit(1)

@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-import sys, os
+import sys
 import numpy as np
 import argparse
 import logging
@@ -65,14 +65,13 @@ show_scalebar = not args.no_sbar
 if show_scalebar:
     z = args.redshift
 kpc = args.sbar_kpc # how many kpc is the scalebar?
-plt.style.use('dark_background')
-plt.rcParams.update({
-    "figure.facecolor":  (0.0, 0.0, 0.0, 0.0),
-    "axes.facecolor":    (0.0, 0.0, 0.0, 1.0),
-    "savefig.facecolor": (0.0, 0.0, 0.0, 0.0)
-})
+# plt.style.use('dark_background')
+# plt.rcParams.update({
+#     "figure.facecolor":  (0.0, 0.0, 0.0, 0.0),
+#     "axes.facecolor":    (0.0, 0.0, 0.0, 1.0),
+#     "savefig.facecolor": (0.0, 0.0, 0.0, 0.0)
+# })
 accentcolor = 'white' if args.type == 'stokes' else 'black'
-accentcolor = 'white'
 
 show_cbar = not args.no_cbar
 show_grid = args.show_grid
@@ -161,7 +160,7 @@ else:
         int_min, int_max = interval.get_limits(data_visible)
 
 logging.info('min: {},  max: {}'.format(int_min,int_max))
-norm = ImageNormalize(data, vmin=float(int_min), vmax=float(int_max), stretch=stretch)
+norm = ImageNormalize(data, vmin=float(int_min), vmax=float(int_max), stretch=stretch)#, clip=True)
 
 # bkgr image
 logging.info("Image...")
@@ -191,31 +190,15 @@ if plottype in ['si','si+err']:
         data_alpha[data_alpha < low_cut] = low_cut
         alpha = 0.7 * (np.nanmin(data_alpha)/data_alpha)**2 + 0.3
         alpha[np.isnan(alpha)] = 0.3
-        print(alpha.shape, data.shape)
         im = ax.imshow(data, alpha=alpha, origin='lower', interpolation='nearest', cmap=turbo, norm=norm)
         ax.contour(all_limit_mask, levels=[0.5], linewidths=0.5, colors=(accentcolor), antialiased=True)
     # ax.contourf(all_limit_mask, alpha=0.5, color='white', colors=('white',), levels=[-0.5,0.5], antialiased=True) # this was used to shade UL and LL
     if np.any(ul_mask == 0): # only if we have any upper limits
         matplotlib.hatch._hatch_types.append(ArrowHatch)
-        cs = ax.contourf(ul_mask, alpha=0.0, levels=[-0.5,0.5], hatches=['arr{270}{7}{2}',''], antialiased=True, colors='none')
-        for i, collection in enumerate(cs.collections):
-            # print(dir(collection))
-            collection.set_edgecolor(accentcolor)
-            # collection.set_linewidth(0.)
-            # collection.set_alpha(1.)
-            path = collection.get_paths()[0]
-            path_patch = matplotlib.patches.PathPatch(path,
-                                                      edgecolor=accentcolor, alpha=1.0, hatch=ArrowHatch,
-                                                      facecolor=accentcolor, linewidth=3)
-            ax.add_patch(path_patch)
-        #     collection.set_color(accentcolor)
+        ax.contourf(ul_mask, alpha=0.0, levels=[-0.5,0.5], hatches=['arr{270}{7}{2}',''], antialiased=True)
     if np.any(ll_mask == 0): # only if we have any upper limits
         matplotlib.hatch._hatch_types.append(ArrowHatch)
-        cs = ax.contourf(ll_mask, alpha=1.0, levels=[-0.5,0.5], hatches=['arr{90}{7}{2}',''], antialiased=True, colors='none')
-        for i, collection in enumerate(cs.collections):
-            collection.set_edgecolor('black')
-            collection.set_color('black')
-            collection.set_linewidth(3.)
+        ax.contourf(ll_mask, alpha=0.0, levels=[-0.5,0.5], hatches=['arr{90}{7}{2}',''], antialiased=True)
 elif plottype == 'sierr':
     im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='RdPu', norm=norm)
 elif plottype == 'curvature':
@@ -228,9 +211,9 @@ else:
     # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='Oranges_r', norm=norm)
     # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='uhh_b', norm=norm)
     # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='YlOrRd_r', norm=norm)
-    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='cubehelix', norm=norm) # Try YlOrRed,
+    im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='cubehelix', norm=norm) # Try YlOrRed,
     # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='Blues_r', norm=norm) # Try YlOrRed,
-    im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='magma', norm=norm) # Try YlOrRed,
+    # im = ax.imshow(data, origin='lower', interpolation='nearest', cmap='magma', norm=norm) # Try YlOrRed,
 
 # contours
 if show_contours:
@@ -262,10 +245,12 @@ if show_grid:
 
 # colorbar
 if show_cbar:
+    im.set_clim(vmax=int_max, vmin=int_min)
     if args.cbar_vertical:
-        addCbar(fig, plottype, im, header, float(int_min), float(int_max), fontsize=fontsize+4,cbanchor=[0.772, 0.11, 0.03, 0.77], orientation='vertical')
+        # addCbar(fig, plottype, im, header, float(int_min), float(int_max), fontsize=fontsize+1,cbanchor=[0.772, 0.11, 0.03, 0.77], orientation='vertical')
+        addCbar(fig, plottype, im, header, float(int_min), float(int_max), fontsize=fontsize+1,cbanchor=[0.872, 0.11, 0.03, 0.77], orientation='vertical')
     else:
-        addCbar(fig, plottype, im, header, float(int_min), float(int_max), fontsize=fontsize+4)
+        addCbar(fig, plottype, im, header, float(int_min), float(int_max), fontsize=fontsize+1)
 
 # scalebar
 if show_scalebar:

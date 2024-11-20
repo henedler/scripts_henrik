@@ -76,7 +76,7 @@ def convert_segment_region_to_lines(file):
                 else:
                     file_o.writelines(line)
 
-def fit_path_to_regions(region, image, z, spacing='beam'):
+def fit_path_to_regions(region, image, z, spacing):
     """
     Fit a path to a number of ds9 point regions. Then, return points on this path at a certain spacing.
     The region file must be ordered!
@@ -86,8 +86,7 @@ def fit_path_to_regions(region, image, z, spacing='beam'):
     region: string, filename of ds9 region file
     image: object, lib_fits.Image()
     z: float, redshift
-    spacing: string or float, optional. Default = 'beam'
-        distance between sample points on path in deg. If 'beam', use primary beam FWHM.
+    spacing: float, optional. Distance between sample points on path in deg.
 
     Returns
     -------
@@ -106,18 +105,7 @@ def fit_path_to_regions(region, image, z, spacing='beam'):
     distance_lin = np.insert(distance_lin,0,0)
     tck, u = interpolate.splprep([trace[:,0], trace[:,1]], u=distance_lin, s=0)
 
-    # use PB FWHM as spacing
-    if spacing == 'beam':
-        beam = image.get_beam()
-        if not beam[0] == beam[1]:
-            raise ValueError(f'Circular beam required!')
-        spacing =  beam[0] / image.get_degperpixel()
-        log.info(f'Using beam FWHM spacing {spacing:.2f} pix / {image.get_beam()[0]*3600:.0f}arcsec')
-    else:
-        spacing = spacing / image.get_degperpixel()
-        log.info(f'Using spacing {spacing:.2f} pix / {spacing*image.get_degperpixel()*3600:.0f}arcsec')
-
-
+    spacing /= image.get_degperpixel()
     # Cubic spline interpolation of linear interpolated data to get correct distances
     # Calculate a lot of points on the spline and then use the accumulated distance from points n to point n+1 as the integrated path
     xy = interpolate.splev(np.linspace(0,u[-1],approxres), tck, ext=2)
@@ -125,22 +113,30 @@ def fit_path_to_regions(region, image, z, spacing='beam'):
     distance_cube = np.insert(distance_cube,0,0)
     tck, u = interpolate.splprep([xy[0], xy[1]], s=0)
     n_pts = int(distance_cube[-1] / spacing)
-    length = np.linspace(0, spacing * n_pts / distance_cube[-1], n_pts)
+    length = np.linspace(0, spacing * n_pts / distance_cube[-1], n_pts+1)
     xy = np.array(interpolate.splev(length, tck, ext=2)).T # points where we sample in image coords.
     length = length * distance_cube[-1] / image.get_pixelperkpc(z) # length at point i in kpc
     log.info(f"Trace consists of {len(trace)} points. Linear interpolation length: {distance_lin[-1]/image.get_pixelperkpc(z):.2f} kpc,  cubic interpolation length: {distance_cube[-1]/image.get_pixelperkpc(z):.2f} kpc")
     return xy, length
 
-def get_path_regions(region, image, z, mode, offset=0.0):
-    # Aux function to get region files for plotting. This will do the path interpolation, and either write exactly the
-    # regions used for flux extraction or write the full interpolated path with 100kpc segments.
-    if mode == 'fluxregions':
-        spacing = 'beam'
-        suffix = '-fluxregions.reg'
-    elif mode == 'pathlength':
-        spacing = 1/3600
-        suffix = '-interpolated.reg'
-    else: raise ValueError("mode must be fluxregions or pathlength.")
+def get_path_regions(region, image, z, spacing, suffix, offset=0.0, draw_path=False):
+    """
+    Aux function to get region files for plotting. This will do the path interpolation, and either write exactly the
+    regions used for flux extraction or write the full interpolated path with 100kpc segments.
+
+    Parameters
+    ----------
+    region
+    image
+    z
+    spacing: region spacing in degree
+    suffix
+    offset
+
+    Returns
+    -------
+
+    """
     df = pd.DataFrame()
     xy, l = fit_path_to_regions(region, image, z, spacing)
     df['l'] = l + offset
@@ -150,17 +146,17 @@ def get_path_regions(region, image, z, mode, offset=0.0):
     if offset == 0.0:
         n_pt, last_pt = 0, -1
     else:
-        n_pt = int(offset // 100) + 1
+        n_pt = int(offset // 1000) + 1
         last_pt = n_pt - 1
     for i, p in df.iterrows():
         try:
             _ra = Angle(str(p['ra']) + 'd', unit=u.deg).to_string(sep=':', unit=u.hour)
             _dec = Angle(p['dec'], unit=u.deg).to_string(sep=':')
-            _rad = 0.5 * Angle(image.get_beam()[0], unit=u.arcsec).value * 3600
+            _rad = 0.5 * Angle(spacing*3600, unit=u.arcsec).value
             line += f'\ncircle({_ra}, {_dec}, {_rad:.5f}")'
         except IndexError:
             pass
-        if p['l'] // 100 == n_pt and last_pt != n_pt and mode=='pathlength':
+        if p['l'] // 1000 == n_pt and last_pt != n_pt and draw_path:
             print('draw pt at ', p['l'])
             line += f'\npoint({str(p["ra"])},{str(p["dec"])}) # point = circle 5 text=' + '{' + f'{int(n_pt * 100)}kpc' + '}'
             last_pt = n_pt
@@ -172,7 +168,7 @@ def get_path_regions(region, image, z, mode, offset=0.0):
     with open(''.join(interp_region_name), 'w') as f:
         f.write(line)
 
-def interpolate_path(region, image, z, offset=0.0, fluxerr=0.0):
+def interpolate_path(region, image, z, offset=0.0, fluxerr=0.0, spacing='beam'):
     """
     Interpolate a path defined by ordered ds9 points and calculate beam-spaced points on this path.
     Slide a psf-sized region along this path and calculate the mean image value along the path.
@@ -183,6 +179,7 @@ def interpolate_path(region, image, z, offset=0.0, fluxerr=0.0):
     image: obj, lib_fits.Image
     n: int, number of points to space on the path
     z: float, redshift
+    spacing: str or float, default = 'beam'. Spacing of the points used for flux region in arcsec. If providing 'beam', use primary beam FWMH
 
     Returns
     -------
@@ -196,10 +193,25 @@ def interpolate_path(region, image, z, offset=0.0, fluxerr=0.0):
         offset: float, optional. Default = 0.0
             Offset of path start from injection point in kpc
     """
-    get_path_regions(region, image, z, 'pathlength', offset) # get the region files as output
-    get_path_regions(region, image, z, 'fluxregions', offset)
+
+    # get_path_regions(region, image, z, 1/3600, '-pathlength.reg', offset) # get the region files as output
+    beam = image.get_beam()
+    if spacing == 'beam':
+        # use PB FWHM as spacing
+        if not beam[0] == beam[1]:
+            raise ValueError(f'Circular beam required!')
+        spacing = beam[0]
+        log.info(f'Using beam FWHM spacing {image.get_beam()[0]*3600:.0f}arcsec')
+    else:
+        spacing = float(spacing)
+        print(spacing,3600, beam[0])
+        if not spacing/3600 >= beam[0]:
+            raise ValueError(f'Requested spacing of {spacing:.1f}asec is less than PSF {beam[0]*3600:.1f}asec')
+        log.info(f'Using  spacing {spacing:.1f}arcsec')
+        spacing = spacing/3600
+    get_path_regions(region, image, z, spacing, '-fluxregions.reg', offset)
     df = pd.DataFrame()
-    xy, l = fit_path_to_regions(region, image, z)
+    xy, l = fit_path_to_regions(region, image, z, spacing)
     df['l'] = l + offset
     radec = image.get_wcs().all_pix2world(xy,0) #TODO check origin
     df['ra'], df['dec'] = radec.T
@@ -244,6 +256,7 @@ if __name__ == '__main__':
     parser.add_argument('--radec', dest='radec', nargs='+', type=float, help='RA/DEC where to center final image in deg (if not given, center on first image)')
     parser.add_argument('-b', '--beam', default = None, type=float, help='If specified, convolve all images to a circular beam of this radius (deg). Otherwise, convolve to a circular beam with a radius equal to the largest beam major axis.')
     parser.add_argument('--iidx', default = 0.65, type=float, help='Injection index.')
+    parser.add_argument('--spacing', default='beam', help='Spacing of the regions used to extract the flux density. Default = "beam", use beam FWHM regions. Can also provide value in arcseconds.')
     parser.add_argument('--injection-offset', default = 0.0, type=float, help='Offset of injection point from beginning of path in kpc.')
     parser.add_argument('--max-fit-length', default = np.inf, type=float,  help='Distance from the first region until which data points should be taken into account for the fitting in kpc.')
     parser.add_argument('--fluxerr', default = 0.0, type=float, help='Flux scale error of all images. Provide a fraction, e.g. 0.1 for a 10%% error. If set to a value greater zero, the flux scale uncertainty will be included in the fit as systematic offset! Make sure this is what you want to do. Otherwise, specify --ignore_flux_corr.')
@@ -289,7 +302,7 @@ if __name__ == '__main__':
     else:
         df_list = []
         for image in all_images:
-            df_thisimg = interpolate_path(args.region, image, args.z, args.injection_offset, args.fluxerr)
+            df_thisimg = interpolate_path(args.region, image, args.z, args.injection_offset, args.fluxerr, args.spacing)
             df_list.append(df_thisimg)
 
         df = pd.concat(df_list, axis=1)
@@ -329,7 +342,6 @@ if __name__ == '__main__':
 
         log.info(f'Save DataFrame to {args.out}.csv')
         df.to_csv(f'{args.out}.csv')
-
     ####################################################################################################################
     # do the fitting
     S = lib_aging.S_model(epsrel=1e-4) #1.5e-2)
@@ -603,7 +615,7 @@ if __name__ == '__main__':
     ax[1].xaxis.set_tick_params(bottom='on',  top='off', labeltop=False, labelbottom=True)
     ax[1].set_xlabel('distance [kpc]')
     ax[1].set_ylabel('spectral index')
-    ax[1].set_ylim(top=-0.5, bottom=-4.5)
+    ax[1].set_ylim(top=-0.2, bottom=-2.5)
     ax[1].legend(fontsize=fs, ncol=2,loc='lower left')
 
     log.info(f'Save plot to {args.out}.pdf...')

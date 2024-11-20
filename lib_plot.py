@@ -113,7 +113,8 @@ def addRegion(regionfile, ax, header, alpha=1.0, color=None, text=True):
 
 def addCbar(fig, plottype, im, header, int_min, int_max, fontsize, cbanchor=[0.127, 0.89, 0.772, 0.02], orientation='horizontal'):
     cbaxes = fig.add_axes(cbanchor)
-    cbar = ColorbarBase(cbaxes, cmap=im.get_cmap(), norm=im.norm, orientation=orientation,  alpha=1.0)
+    cbar = ColorbarBase(cbaxes, cmap=im.get_cmap(), norm=im.norm, orientation=orientation,  alpha=1.0, extend='neither')
+    im.get_cmap().set_bad('white')
     # cbar = fig.colorbar(im, cax=cbaxes, orientation='horizontal', pad=0.35, alpha=1.0)
     if orientation == 'horizontal':
         labelax = cbaxes.xaxis
@@ -124,12 +125,13 @@ def addCbar(fig, plottype, im, header, int_min, int_max, fontsize, cbanchor=[0.1
     if plottype == 'stokes':
         # cbaxes.xaxis.set_label_text(r'rms noise level [mJy beam$^{-1}$]', fontsize=fontsize)
         labelax.set_label_text(r'Surface brightness [mJy beam$^{-1}$]', fontsize=fontsize)
-        log_start, log_stop = -2, np.floor(np.log10(int_max)).astype(int)
+        log_start, log_stop = np.floor(np.log10(int_min)).astype(int), np.floor(np.log10(int_max)).astype(int)
         # cbar.set_ticks([0.001,0.005,0.01,0.05,0.1,0.5,1.,5.,10.])
-        cbar.set_ticks(10**(np.linspace(log_start, log_stop+1, log_stop - log_start +2 )) )  # horizontal colorbar
+        # cbar.set_ticks(10**(np.linspace(log_start, log_stop+1, log_stop - log_start +2 )) )  # horizontal colorbar
+        cbar.set_ticks(10**(np.linspace(log_start+1, log_stop, log_stop - log_start  )) )  # horizontal colorbar
     elif plottype in ['si', 'si+err']:
         pass
-        # labelax.set_label_text(r'$\alpha_\mathrm{'+f'{(header["FREQLO"]*1e-6):.0f}'+'\,MHz}^\mathrm{'f'{(header["FREQHI"]*1e-6):.0f}'+'\,MHz}$', fontsize=fontsize, rotation=rot)
+        labelax.set_label_text(r'$\alpha_\mathrm{'+f'{(header["FREQLO"]*1e-6):.0f}'+'\,MHz}^\mathrm{'f'{(header["FREQHI"]*1e-6):.0f}'+'\,MHz}$', fontsize=fontsize, rotation=rot)
     elif plottype == 'sierr':
         labelax.set_label_text(r'$\Delta\alpha_\mathrm{'+f'{(header["FREQLO"]*1e-6):.0f}'+'\,MHz}^\mathrm{'f'{(header["FREQHI"]*1e-6):.0f}'+'\,MHz}$', fontsize=fontsize, rotation=rot)
     elif plottype == 'curvature':

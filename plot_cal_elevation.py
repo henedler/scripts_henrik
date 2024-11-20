@@ -44,6 +44,9 @@ def get_mid_hms(early, late):
 def get_altitude_3c196(lts):
     return 90 - distanceOnSphere(123.4001379, 48.2173778, lts*360/24, 52.8344444)
 
+def get_altitude_3c273(lts):
+    return 90 - distanceOnSphere(187.277915, 2.052388, lts * 360 / 24, 52.8344444)
+
 def get_altitude_3c295(lts):
     return 90 - distanceOnSphere(212.835495, 52.202770, lts*360/24, 52.8344444)
 
@@ -52,18 +55,20 @@ def get_altitude_3c380(lts):
 
 
 lts_ranges = np.linspace(0,24,144*60)
-a3c196, a3c295, a3c380 = [], [], []
+a3c196, a3c273, a3c295, a3c380 = [], [], [], []
 for lts in lts_ranges:
     a3c196.append(get_altitude_3c196(lts))
+    a3c273.append(get_altitude_3c273(lts))
     a3c295.append(get_altitude_3c295(lts))
     a3c380.append(get_altitude_3c380(lts))
-a3c196, a3c295, a3c380 = np.array(a3c196), np.array(a3c295), np.array(a3c380)
+a3c196, a3c273, a3c295, a3c380 = np.array(a3c196), np.array(a3c273), np.array(a3c295), np.array(a3c380)
 n3c196 = np.max([a3c295, a3c380], axis=0)
 n3c295 = np.max([a3c380, a3c196], axis=0)
 n3c380 = np.max([a3c196, a3c295], axis=0)
 print(lts_ranges[a3c295 > n3c295])
 plt.plot(lts_ranges, a3c196, label='3c196')
 plt.plot(lts_ranges, a3c295, label='3c295')
+plt.plot(lts_ranges, a3c273, label='3c273')
 plt.plot(lts_ranges, a3c380, label='3c380')
 plt.vlines([1.389, 11.118, 16.402],0,90)
 plt.legend()
